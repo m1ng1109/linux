@@ -467,6 +467,22 @@ config GPIO_MXS
 	select GPIO_GENERIC
 	select GENERIC_IRQ_CHIP
 
+config GPIO_MAX732X_IRQ
+        bool "Interrupt controller support for MAX732x"
+        depends on GPIO_MAX732X=y
+        select GPIOLIB_IRQCHIP
+        help
+          Say yes here to enable the max732x to be used as an interrupt
+          controller. It requires the driver to be built in the kernel.
+
+config GPIO_NCT6694
+        tristate "Nuvoton NCT6694 GPIO controller support"
+        depends on MFD_NCT6694
+        select GENERIC_IRQ_CHIP
+        select GPIOLIB_IRQCHIP
+        help
+          Say Y here to support Nuvoton NCT6694 GPIO controller.
+
 config GPIO_OCTEON
 	tristate "Cavium OCTEON GPIO"
 	depends on CAVIUM_OCTEON_SOC
