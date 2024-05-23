@@ -628,6 +628,13 @@ config NPCM7XX_WATCHDOG
 	  This watchdog is used to reset the system and thus cannot be
 	  compiled as a module.
 
+config NCT6694_WATCHDOG
+	tristate "Nuvoton NCT6694 watchdog support"
+	depends on MFD_NCT6694
+	select WATCHDOG_CORE
+	help
+	  Say Y here to support Nuvoton NCT6694 watchdog.
+
 config TWL4030_WATCHDOG
 	tristate "TWL4030 Watchdog"
 	depends on TWL4030_CORE
