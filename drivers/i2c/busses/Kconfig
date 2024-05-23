@@ -880,6 +880,12 @@ config I2C_NPCM
 	  controllers.
 	  Driver can also support slave mode (select I2C_SLAVE).
 
+config I2C_NCT6694
+        tristate "Nuvoton NCT6694 I2C Adapter support"
+        depends on MFD_NCT6694
+        help
+          Say Y here to support Nuvoton NCT6694 Adapter.
+
 config I2C_OCORES
 	tristate "OpenCores I2C Controller"
 	help
