@@ -235,7 +235,7 @@ static int acm_start_wb(struct acm *acm, struct acm_wb *wb)
 	wb->urb->transfer_dma = wb->dmah;
 	wb->urb->transfer_buffer_length = wb->len;
 	wb->urb->dev = acm->dev;
-
+	pr_info("%s: submit urb len = %d", __func__, wb->len);
 	rc = usb_submit_urb(wb->urb, GFP_ATOMIC);
 	if (rc < 0) {
 		if (rc != -EPERM)
@@ -500,7 +500,7 @@ static void acm_read_bulk_callback(struct urb *urb)
 	bool stalled = false;
 	bool cooldown = false;
 
-	dev_vdbg(&acm->data->dev, "got urb %d, len %d, status %d\n",
+	dev_info(&acm->data->dev, "got urb %d, len %d, status %d\n",
 		rb->index, urb->actual_length, status);
 
 	switch (status) {
@@ -573,7 +573,7 @@ static void acm_write_bulk(struct urb *urb)
 	int status = urb->status;
 
 	if (status || (urb->actual_length != urb->transfer_buffer_length))
-		dev_vdbg(&acm->data->dev, "wrote len %d/%d, status %d\n",
+		dev_info(&acm->data->dev, "wrote len %d/%d, status %d\n",
 			urb->actual_length,
 			urb->transfer_buffer_length,
 			status);
@@ -801,7 +801,7 @@ static int acm_tty_write(struct tty_struct *tty,
 	if (!count)
 		return 0;
 
-	dev_vdbg(&acm->data->dev, "%d bytes from tty layer\n", count);
+	dev_info(&acm->data->dev, "%d bytes from tty layer\n", count);
 
 	spin_lock_irqsave(&acm->write_lock, flags);
 	wbn = acm_wb_alloc(acm);
@@ -818,7 +818,7 @@ static int acm_tty_write(struct tty_struct *tty,
 	}
 
 	count = (count > acm->writesize) ? acm->writesize : count;
-	dev_vdbg(&acm->data->dev, "writing %d bytes\n", count);
+	dev_info(&acm->data->dev, "writing %d bytes, acm->writesize = %d bytes\n", count, acm->writesize);
 	memcpy(wb->buf, buf, count);
 	wb->len = count;
 
