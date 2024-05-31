@@ -1793,7 +1793,6 @@ static int xhci_urb_enqueue(struct usb_hcd *hcd, struct urb *urb, gfp_t mem_flag
 	urb_priv->num_tds = num_tds;
 	urb_priv->num_tds_done = 0;
 	urb->hcpriv = urb_priv;
-	pr_info("%s: num_tds = %d, ep_index = %d", __func__, num_tds, ep_index);
 	trace_xhci_urb_enqueue(urb);
 
 	if (usb_endpoint_xfer_control(&urb->ep->desc)) {

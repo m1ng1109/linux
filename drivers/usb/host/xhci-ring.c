@@ -3662,12 +3662,10 @@ int xhci_queue_bulk_tx(struct xhci_hcd *xhci, gfp_t mem_flags,
 	    && urb->dev->speed >= USB_SPEED_SUPER) {
 		vli_bulk_quirk = 1;
 	}
-	pr_info("%s: block_len = %d, full_len = %d, maxpacket = %d", __func__, block_len, full_len, maxpacket);
 	/* Queue the TRBs, even if they are zero-length */
 	for (enqd_len = 0; first_trb || enqd_len < full_len;
 			enqd_len += trb_buff_len) {
 		field = TRB_TYPE(TRB_NORMAL);
-		pr_info("%s: enqd_len = %d, trb_buff_len = %d, block_len = %d, full_len = %d", __func__, enqd_len, trb_buff_len, block_len, full_len);
 		/* TRB buffer should not cross 64KB boundaries */
 		trb_buff_len = TRB_BUFF_LEN_UP_TO_BOUNDARY(addr);
 		trb_buff_len = min_t(unsigned int, trb_buff_len, block_len);
