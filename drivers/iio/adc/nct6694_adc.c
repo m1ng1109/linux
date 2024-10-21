@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0+
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Nuvoton NCT6694 IIO driver based on USB interface.
  *
@@ -21,25 +21,24 @@
 /* Report Channel */
 #define IIO_VIN_STS(x)		(0x68 + (x))
 #define IIO_TMP_STS(x)		(0x6A + (x))
-#define IIO_TMP_STS_CH(x)	(x < 10 ? x : ((x) + 6))
+#define IIO_TMP_STS_CH(x)	((x) < 10 ? x : ((x) + 6))
 
 /* Message Channel*/
 /* Command 00h */
 #define REQUEST_IIO_CMD0_LEN	0x40
-#define REQUEST_IIO_CMD0_OFFSET	0x0000	/* OFFSET = SEL|CMD */
+#define REQUEST_IIO_CMD0_OFFSET 0x0000	/* OFFSET = SEL|CMD */
 #define IIO_VIN_EN(x)		(0x00 + (x))
 #define IIO_TMP_EN(x)		(0x02 + (x))
 /* Command 02h */
 #define REQUEST_IIO_CMD2_LEN	0x90
-#define REQUEST_IIO_CMD2_OFFSET	0x0002	/* OFFSET = SEL|CMD */
+#define REQUEST_IIO_CMD2_OFFSET 0x0002	/* OFFSET = SEL|CMD */
 #define IIO_SMI_CTRL_IDX	0x00
 #define IIO_VIN_LIMIT_IDX(x)	(0x10 + ((x) * 2))
 #define IIO_TMP_LIMIT_IDX(x)	(0x30 + ((x) * 2))
 #define IIO_CMD2_HYST_MASK	0x1F
 /* Command 03h */
 #define REQUEST_IIO_CMD3_LEN	0x08
-#define REQUEST_IIO_CMD3_OFFSET	0x0003	/* OFFSET = SEL|CMD */
-
+#define REQUEST_IIO_CMD3_OFFSET 0x0003	/* OFFSET = SEL|CMD */
 
 struct nct6694_iio_data {
 	struct nct6694 *nct6694;
@@ -50,12 +49,14 @@ static const struct iio_event_spec nct6694_volt_events[] = {
 	{
 		.type = IIO_EV_TYPE_THRESH,
 		.dir = IIO_EV_DIR_RISING,
-		.mask_separate = BIT(IIO_EV_INFO_VALUE) | BIT(IIO_EV_INFO_ENABLE),
+		.mask_separate = BIT(IIO_EV_INFO_VALUE) |
+				 BIT(IIO_EV_INFO_ENABLE),
 	},
 	{
 		.type = IIO_EV_TYPE_THRESH,
 		.dir = IIO_EV_DIR_FALLING,
-		.mask_separate = BIT(IIO_EV_INFO_VALUE) | BIT(IIO_EV_INFO_ENABLE),
+		.mask_separate = BIT(IIO_EV_INFO_VALUE) |
+				 BIT(IIO_EV_INFO_ENABLE),
 	}
 };
 
@@ -63,31 +64,32 @@ static const struct iio_event_spec nct6694_temp_events[] = {
 	{
 		.type = IIO_EV_TYPE_THRESH,
 		.dir = IIO_EV_DIR_RISING,
-		.mask_separate = BIT(IIO_EV_INFO_VALUE) | BIT(IIO_EV_INFO_ENABLE),
+		.mask_separate = BIT(IIO_EV_INFO_VALUE) |
+				 BIT(IIO_EV_INFO_ENABLE),
 	}
 };
 
-#define NCT6694_VOLTAGE_CHANNEL(num, addr) { \
-	.type = IIO_VOLTAGE, \
-	.indexed = 1, \
-	.channel = num, \
-	.address = addr, \
-	.info_mask_separate = BIT(IIO_CHAN_INFO_ENABLE) | \
-			      BIT(IIO_CHAN_INFO_PROCESSED), \
-	.event_spec = nct6694_volt_events, \
-	.num_event_specs = ARRAY_SIZE(nct6694_volt_events), \
+#define NCT6694_VOLTAGE_CHANNEL(num, addr) {			\
+	.type = IIO_VOLTAGE,					\
+	.indexed = 1,						\
+	.channel = num,						\
+	.address = addr,					\
+	.info_mask_separate = BIT(IIO_CHAN_INFO_ENABLE) |	\
+			      BIT(IIO_CHAN_INFO_PROCESSED),	\
+	.event_spec = nct6694_volt_events,			\
+	.num_event_specs = ARRAY_SIZE(nct6694_volt_events),	\
 }
 
-#define NCT6694_TEMPERATURE_CHANNEL(num, addr) { \
-	.type = IIO_TEMP, \
-	.indexed = 1, \
-	.channel = num, \
-	.address = addr, \
-	.info_mask_separate = BIT(IIO_CHAN_INFO_ENABLE) | \
-			      BIT(IIO_CHAN_INFO_PROCESSED) | \
-			      BIT(IIO_CHAN_INFO_HYSTERESIS), \
-	.event_spec = nct6694_temp_events, \
-	.num_event_specs = ARRAY_SIZE(nct6694_temp_events), \
+#define NCT6694_TEMPERATURE_CHANNEL(num, addr) {		\
+	.type = IIO_TEMP,					\
+	.indexed = 1,						\
+	.channel = num,						\
+	.address = addr,					\
+	.info_mask_separate = BIT(IIO_CHAN_INFO_ENABLE) |	\
+			      BIT(IIO_CHAN_INFO_PROCESSED) |	\
+			      BIT(IIO_CHAN_INFO_HYSTERESIS),	\
+	.event_spec = nct6694_temp_events,			\
+	.num_event_specs = ARRAY_SIZE(nct6694_temp_events),	\
 }
 
 static const struct iio_chan_spec nct6694_iio_channels[] = {
@@ -145,7 +147,7 @@ static int nct6694_read_raw(struct iio_dev *indio_dev,
 	unsigned char buf[2], tmp_hyst, enable_idx;
 	int ret;
 
-	if ((chan->type != IIO_VOLTAGE) && (chan->type != IIO_TEMP))
+	if (chan->type != IIO_VOLTAGE && chan->type != IIO_TEMP)
 		return -EOPNOTSUPP;
 
 	switch (mask) {
@@ -162,27 +164,27 @@ static int nct6694_read_raw(struct iio_dev *indio_dev,
 		default:
 			return -EINVAL;
 		}
-		ret = nct6694_getusb(data->nct6694, REQUEST_IIO_MOD,
-				     REQUEST_IIO_CMD0_OFFSET,
-				     REQUEST_IIO_CMD0_LEN,
-				     enable_idx, 1, buf);
-		if (ret) {
-			pr_err("%s: Failed to get iio device!:%d", __func__, ret);
+		ret = nct6694_read_msg(data->nct6694, REQUEST_IIO_MOD,
+				       REQUEST_IIO_CMD0_OFFSET,
+				       REQUEST_IIO_CMD0_LEN, enable_idx,
+				       1, buf);
+		if (ret)
 			return -EINVAL;
-		}
+
 		*val = buf[0] & BIT(chan->channel % 8) ? 1 : 0;
+
 		return IIO_VAL_INT;
 
 	case IIO_CHAN_INFO_PROCESSED:
-		ret = nct6694_getusb(data->nct6694, REQUEST_RPT_MOD,
-				     chan->address, 2, 0, 2, buf);
-		if (ret) {
-			pr_err("%s: Failed to get iio device!\n", __func__);
+		ret = nct6694_read_msg(data->nct6694, REQUEST_RPT_MOD,
+				       chan->address, 2, 0, 2, buf);
+		if (ret)
 			return -EINVAL;
-		}
+
 		switch (chan->type) {
 		case IIO_VOLTAGE:	/* in micro Voltage */
 			*val = buf[0] * 16;
+
 			return IIO_VAL_INT;
 
 		case IIO_TEMP:	/* in milli degrees Celsius */
@@ -198,19 +200,19 @@ static int nct6694_read_raw(struct iio_dev *indio_dev,
 		}
 
 	case IIO_CHAN_INFO_HYSTERESIS:
-		ret = nct6694_getusb(data->nct6694, REQUEST_IIO_MOD,
-				     REQUEST_IIO_CMD2_OFFSET,
-				     REQUEST_IIO_CMD2_LEN,
-				     IIO_TMP_LIMIT_IDX(chan->channel),
-				     2, buf);
-		if (ret) {
-			pr_err("%s: Failed to get iio device!\n", __func__);
+		ret = nct6694_read_msg(data->nct6694, REQUEST_IIO_MOD,
+				       REQUEST_IIO_CMD2_OFFSET,
+				       REQUEST_IIO_CMD2_LEN,
+				       IIO_TMP_LIMIT_IDX(chan->channel),
+				       2, buf);
+		if (ret)
 			return -EINVAL;
-		}
+
 		switch (chan->type) {
 		case IIO_TEMP:	/* in milli degrees Celsius */
 			tmp_hyst = buf[0] >> 5;
 			*val = (buf[1] - tmp_hyst) * 1000;
+
 			return IIO_VAL_INT;
 
 		default:
@@ -232,47 +234,53 @@ static int nct6694_write_raw(struct iio_dev *indio_dev,
 	unsigned char delta_hyst;
 	int ret;
 
-	if ((chan->type != IIO_VOLTAGE) && (chan->type != IIO_TEMP))
+	if (chan->type != IIO_VOLTAGE && chan->type != IIO_TEMP)
 		return -EOPNOTSUPP;
 
 	switch (mask) {
 	case IIO_CHAN_INFO_ENABLE:
 		mutex_lock(&data->iio_lock);
-		ret = nct6694_getusb(data->nct6694, REQUEST_IIO_MOD,
-				     REQUEST_IIO_CMD0_OFFSET,
-				     REQUEST_IIO_CMD0_LEN, 0,
-				     REQUEST_IIO_CMD0_LEN,
-				     enable_buf);
-		if (ret) {
-			pr_err("%s: Failed to get iio device!\n", __func__);
+		ret = nct6694_read_msg(data->nct6694, REQUEST_IIO_MOD,
+				       REQUEST_IIO_CMD0_OFFSET,
+				       REQUEST_IIO_CMD0_LEN, 0,
+				       REQUEST_IIO_CMD0_LEN,
+				       enable_buf);
+		if (ret)
 			goto err;
-		}
+
 		switch (chan->type) {
 		case IIO_VOLTAGE:
-			if (val)
-				enable_buf[IIO_VIN_EN(chan->channel / 8)] |= BIT(chan->channel % 8);
-			else
-				enable_buf[IIO_VIN_EN(chan->channel / 8)] &= ~BIT(chan->channel % 8);
+			if (val) {
+				enable_buf[IIO_VIN_EN(chan->channel / 8)] |=
+				BIT(chan->channel % 8);
+			} else {
+				enable_buf[IIO_VIN_EN(chan->channel / 8)] &=
+				~BIT(chan->channel % 8);
+			}
+
 			break;
 
 		case IIO_TEMP:
-			if (val)
-				enable_buf[IIO_TMP_EN(chan->channel / 8)] |= BIT(chan->channel % 8);
-			else
-				enable_buf[IIO_TMP_EN(chan->channel / 8)] &= ~BIT(chan->channel % 8);
+			if (val) {
+				enable_buf[IIO_TMP_EN(chan->channel / 8)] |=
+				BIT(chan->channel % 8);
+			} else {
+				enable_buf[IIO_TMP_EN(chan->channel / 8)] &=
+				~BIT(chan->channel % 8);
+			}
+
 			break;
 
 		default:
 			ret = -EINVAL;
 			goto err;
 		}
-		ret = nct6694_setusb_wdata(data->nct6694, REQUEST_IIO_MOD,
-					   REQUEST_IIO_CMD0_OFFSET,
-					   REQUEST_IIO_CMD0_LEN, enable_buf);
-		if (ret) {
-			pr_err("%s: Failed to set iio device!\n", __func__);
+
+		ret = nct6694_write_msg(data->nct6694, REQUEST_IIO_MOD,
+					REQUEST_IIO_CMD0_OFFSET,
+					REQUEST_IIO_CMD0_LEN, enable_buf);
+		if (ret)
 			goto err;
-		}
 
 		break;
 
@@ -280,18 +288,17 @@ static int nct6694_write_raw(struct iio_dev *indio_dev,
 		switch (chan->type) {
 		case IIO_TEMP:
 			mutex_lock(&data->iio_lock);
-			ret = nct6694_getusb(data->nct6694, REQUEST_IIO_MOD,
-					     REQUEST_IIO_CMD2_OFFSET,
-					     REQUEST_IIO_CMD2_LEN, 0,
-					     REQUEST_IIO_CMD2_LEN, buf);
-			if (ret) {
-				pr_err("Failed to get iio registers!");
+			ret = nct6694_read_msg(data->nct6694, REQUEST_IIO_MOD,
+					       REQUEST_IIO_CMD2_OFFSET,
+					       REQUEST_IIO_CMD2_LEN, 0,
+					       REQUEST_IIO_CMD2_LEN, buf);
+			if (ret)
 				goto err;
-			}
 
-			delta_hyst = buf[IIO_TMP_LIMIT_IDX(chan->channel) + 1] - (u8) val;
+			delta_hyst = buf[IIO_TMP_LIMIT_IDX(chan->channel) + 1] - (u8)val;
 			if (delta_hyst > 7) {
-				pr_err("%s: The Hysteresis value must be less than 7!", __func__);
+				pr_err("%s: The Hysteresis value must be less than 7!\n",
+				       __func__);
 				ret = -EINVAL;
 				goto err;
 			}
@@ -304,13 +311,11 @@ static int nct6694_write_raw(struct iio_dev *indio_dev,
 			ret = -EINVAL;
 			goto err;
 		}
-		ret = nct6694_setusb_wdata(data->nct6694, REQUEST_IIO_MOD,
-					   REQUEST_IIO_CMD2_OFFSET,
-					   REQUEST_IIO_CMD2_LEN, buf);
-		if (ret) {
-			pr_err("%s: Failed to set iio device!\n", __func__);
+		ret = nct6694_write_msg(data->nct6694, REQUEST_IIO_MOD,
+					REQUEST_IIO_CMD2_OFFSET,
+					REQUEST_IIO_CMD2_LEN, buf);
+		if (ret)
 			goto err;
-		}
 
 		break;
 
@@ -333,32 +338,30 @@ static int nct6694_read_event_config(struct iio_dev *indio_dev,
 	unsigned char buf;
 	int ret;
 
-	if ((chan->type != IIO_VOLTAGE) && (chan->type != IIO_TEMP))
+	if (chan->type != IIO_VOLTAGE && chan->type != IIO_TEMP)
 		return -EOPNOTSUPP;
 
 	switch (dir) {
 	case IIO_EV_DIR_RISING:
 		switch (chan->type) {
 		case IIO_VOLTAGE:
-			ret = nct6694_getusb(data->nct6694, REQUEST_RPT_MOD,
-					     IIO_VIN_STS(chan->channel / 8),
-					     1, 0, 1, &buf);
-			if (ret) {
-				pr_err("%s: Failed to get iio device!\n", __func__);
+			ret = nct6694_read_msg(data->nct6694, REQUEST_RPT_MOD,
+					       IIO_VIN_STS(chan->channel / 8),
+					       1, 0, 1, &buf);
+			if (ret)
 				return -EINVAL;
-			}
+
 			return !!(buf & BIT(chan->channel % 8));
 
 		case IIO_TEMP:
 			u8 ch = IIO_TMP_STS_CH(chan->channel);
 
-			ret = nct6694_getusb(data->nct6694, REQUEST_RPT_MOD,
-					     IIO_TMP_STS(ch / 8),
-					     1, 0, 1, &buf);
-			if (ret) {
-				pr_err("%s: Failed to get iio device!\n", __func__);
+			ret = nct6694_read_msg(data->nct6694, REQUEST_RPT_MOD,
+					       IIO_TMP_STS(ch / 8),
+					       1, 0, 1, &buf);
+			if (ret)
 				return -EINVAL;
-			}
+
 			return !!(buf & BIT(ch % 8));
 
 		default:
@@ -383,36 +386,32 @@ static int nct6694_read_event_value(struct iio_dev *indio_dev,
 	unsigned char buf[2];
 	int ret;
 
-	if ((chan->type != IIO_VOLTAGE) && (chan->type != IIO_TEMP))
+	if (chan->type != IIO_VOLTAGE && chan->type != IIO_TEMP)
 		return -EOPNOTSUPP;
 
 	switch (dir) {
 	case IIO_EV_DIR_RISING:
 		switch (chan->type) {
 		case IIO_VOLTAGE:
-			ret = nct6694_getusb(data->nct6694, REQUEST_IIO_MOD,
-					     REQUEST_IIO_CMD2_OFFSET,
-					     REQUEST_IIO_CMD2_LEN,
-					     IIO_VIN_LIMIT_IDX(chan->channel),
-					     2, buf);
-			if (ret) {
-				pr_err("%s: Failed to get iio device!\n", __func__);
+			ret = nct6694_read_msg(data->nct6694, REQUEST_IIO_MOD,
+					       REQUEST_IIO_CMD2_OFFSET,
+					       REQUEST_IIO_CMD2_LEN,
+					       IIO_VIN_LIMIT_IDX(chan->channel),
+					       2, buf);
+			if (ret)
 				return -EINVAL;
-			}
 
 			*val = buf[0] * 16;
 			return IIO_VAL_INT;
 
 		case IIO_TEMP:
-			ret = nct6694_getusb(data->nct6694, REQUEST_IIO_MOD,
-					     REQUEST_IIO_CMD2_OFFSET,
-					     REQUEST_IIO_CMD2_LEN,
-					     IIO_TMP_LIMIT_IDX(chan->channel),
-					     2, buf);
-			if (ret) {
-				pr_err("%s: Failed to get iio device!\n", __func__);
+			ret = nct6694_read_msg(data->nct6694, REQUEST_IIO_MOD,
+					       REQUEST_IIO_CMD2_OFFSET,
+					       REQUEST_IIO_CMD2_LEN,
+					       IIO_TMP_LIMIT_IDX(chan->channel),
+					       2, buf);
+			if (ret)
 				return -EINVAL;
-			}
 
 			*val = (signed char)buf[1] * 1000;
 			return IIO_VAL_INT;
@@ -424,15 +423,13 @@ static int nct6694_read_event_value(struct iio_dev *indio_dev,
 	case IIO_EV_DIR_FALLING:
 		switch (chan->type) {
 		case IIO_VOLTAGE:
-			ret = nct6694_getusb(data->nct6694, REQUEST_IIO_MOD,
-					     REQUEST_IIO_CMD2_OFFSET,
-					     REQUEST_IIO_CMD2_LEN,
-					     IIO_VIN_LIMIT_IDX(chan->channel),
-					     2, buf);
-			if (ret) {
-				pr_err("%s: Failed to get iio device!\n", __func__);
+			ret = nct6694_read_msg(data->nct6694, REQUEST_IIO_MOD,
+					       REQUEST_IIO_CMD2_OFFSET,
+					       REQUEST_IIO_CMD2_LEN,
+					       IIO_VIN_LIMIT_IDX(chan->channel),
+					       2, buf);
+			if (ret)
 				return -EINVAL;
-			}
 
 			*val = buf[1] * 16;
 			return IIO_VAL_INT;
@@ -457,28 +454,26 @@ static int nct6694_write_event_value(struct iio_dev *indio_dev,
 	unsigned char buf[REQUEST_IIO_CMD2_LEN] = {0};
 	int ret;
 
-	if ((chan->type != IIO_VOLTAGE) && (chan->type != IIO_TEMP))
+	if (chan->type != IIO_VOLTAGE && chan->type != IIO_TEMP)
 		return -EOPNOTSUPP;
 
 	mutex_lock(&data->iio_lock);
-	ret = nct6694_getusb(data->nct6694, REQUEST_IIO_MOD,
-			     REQUEST_IIO_CMD2_OFFSET,
-			     REQUEST_IIO_CMD2_LEN, 0,
-			     REQUEST_IIO_CMD2_LEN, buf);
-	if (ret) {
-		pr_err("Failed to get iio registers!");
+	ret = nct6694_read_msg(data->nct6694, REQUEST_IIO_MOD,
+			       REQUEST_IIO_CMD2_OFFSET,
+			       REQUEST_IIO_CMD2_LEN, 0,
+			       REQUEST_IIO_CMD2_LEN, buf);
+	if (ret)
 		goto err;
-	}
 
 	switch (dir) {
 	case IIO_EV_DIR_RISING:
 		switch (chan->type) {
 		case IIO_VOLTAGE:
-			buf[IIO_VIN_LIMIT_IDX(chan->channel)] = (u8) val;
+			buf[IIO_VIN_LIMIT_IDX(chan->channel)] = (u8)val;
 			break;
 
 		case IIO_TEMP:
-			buf[IIO_TMP_LIMIT_IDX(chan->channel) + 1] = (s8) val;
+			buf[IIO_TMP_LIMIT_IDX(chan->channel) + 1] = (s8)val;
 			break;
 
 		default:
@@ -490,7 +485,7 @@ static int nct6694_write_event_value(struct iio_dev *indio_dev,
 	case IIO_EV_DIR_FALLING:
 		switch (chan->type) {
 		case IIO_VOLTAGE:
-			buf[IIO_VIN_LIMIT_IDX(chan->channel) + 1] = (u8) val;
+			buf[IIO_VIN_LIMIT_IDX(chan->channel) + 1] = (u8)val;
 			break;
 
 		default:
@@ -504,13 +499,11 @@ static int nct6694_write_event_value(struct iio_dev *indio_dev,
 		goto err;
 	}
 
-	ret = nct6694_setusb_wdata(data->nct6694, REQUEST_IIO_MOD,
-				   REQUEST_IIO_CMD2_OFFSET,
-				   REQUEST_IIO_CMD2_LEN, buf);
-	if (ret) {
-		pr_err("%s: Failed to set usb device!", __func__);
+	ret = nct6694_write_msg(data->nct6694, REQUEST_IIO_MOD,
+				REQUEST_IIO_CMD2_OFFSET,
+				REQUEST_IIO_CMD2_LEN, buf);
+	if (ret)
 		goto err;
-	}
 
 err:
 	mutex_unlock(&data->iio_lock);
@@ -532,23 +525,19 @@ static int nct6694_iio_init(struct nct6694_iio_data *data)
 
 	/* Set VIN & TMP Real Time alarm mode */
 	mutex_lock(&data->iio_lock);
-	ret = nct6694_getusb(data->nct6694, REQUEST_IIO_MOD,
-					    REQUEST_IIO_CMD2_OFFSET,
-					    REQUEST_IIO_CMD2_LEN, 0,
-					    REQUEST_IIO_CMD2_LEN, buf);
-	if (ret) {
-		pr_err("%s: Failed to get iio registers!", __func__);
+	ret = nct6694_read_msg(data->nct6694, REQUEST_IIO_MOD,
+			       REQUEST_IIO_CMD2_OFFSET,
+			       REQUEST_IIO_CMD2_LEN, 0,
+			       REQUEST_IIO_CMD2_LEN, buf);
+	if (ret)
 		goto err;
-	}
 
 	buf[IIO_SMI_CTRL_IDX] = 0x02;
-	ret = nct6694_setusb_wdata(data->nct6694, REQUEST_IIO_MOD,
-				   REQUEST_IIO_CMD2_OFFSET,
-				   REQUEST_IIO_CMD2_LEN, buf);
-	if (ret) {
-		pr_err("%s: Failed to set iio device!", __func__);
+	ret = nct6694_write_msg(data->nct6694, REQUEST_IIO_MOD,
+				REQUEST_IIO_CMD2_OFFSET,
+				REQUEST_IIO_CMD2_LEN, buf);
+	if (ret)
 		goto err;
-	}
 
 err:
 	mutex_unlock(&data->iio_lock);
@@ -571,7 +560,6 @@ static int nct6694_iio_probe(struct platform_device *pdev)
 	mutex_init(&data->iio_lock);
 	platform_set_drvdata(pdev, data);
 
-
 	ret = nct6694_iio_init(data);
 	if (ret)
 		return -EIO;
@@ -588,8 +576,6 @@ static int nct6694_iio_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Failed to register iio device!\n");
 		return ret;
 	}
-
-	dev_info(&pdev->dev, "Probe device :%s", pdev->name);
 
 	return 0;
 }
@@ -613,7 +599,6 @@ static int __init nct6694_init(void)
 
 	err = platform_driver_register(&nct6694_iio_driver);
 	if (!err) {
-		pr_info(DRVNAME ": platform_driver_register\n");
 		if (err)
 			platform_driver_unregister(&nct6694_iio_driver);
 	}
@@ -631,4 +616,3 @@ module_exit(nct6694_exit);
 MODULE_DESCRIPTION("USB-iio driver for NCT6694");
 MODULE_AUTHOR("Tzu-Ming Yu <tmyu0@nuvoton.com>");
 MODULE_LICENSE("GPL");
-
