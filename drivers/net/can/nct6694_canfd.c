@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0+
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Nuvoton NCT6694 Socket CANfd driver based on USB interface.
  *
@@ -9,13 +9,13 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
-#include <linux/workqueue.h>
+#include <linux/mfd/core.h>
 #include <linux/platform_device.h>
 #include <linux/mfd/nct6694.h>
 
 #define NR_CAN	2
 
-#define DRVNAME "nct6694-canfd"
+#define DRVNAME "nct6694-can"
 
 /* Host interface */
 #define REQUEST_CAN_MOD			0x05
@@ -23,7 +23,7 @@
 /* Message Channel*/
 /* Command 00h */
 #define REQUEST_CAN_CMD0_LEN		0x18
-#define REQUEST_CAN_CMD0_OFFSET(idx)	(idx ? 0x0100 : 0x0000)	/* OFFSET = SEL|CMD */
+#define REQUEST_CAN_CMD0_OFFSET(idx)	(idx ? 0x0100 : 0x0000)
 #define CAN_NBR_IDX			0x00
 #define CAN_DBR_IDX			0x04
 #define CAN_CTRL1_IDX			0x0C
@@ -33,14 +33,16 @@
 
 /* Command 01h */
 #define REQUEST_CAN_CMD1_LEN		0x08
-#define REQUEST_CAN_CMD1_OFFSET		0x0001	/* OFFSET = SEL|CMD */
+#define REQUEST_CAN_CMD1_OFFSET		0x0001
 #define CAN_CLK_IDX			0x04
 #define CAN_CLK_LEN			0x04
 
 /* Command 02h */
 #define REQUEST_CAN_CMD2_LEN		0x10
-#define REQUEST_CAN_CMD2_OFFSET(idx, mask) (idx ? (0x80 | (mask & 0xFF)) << 8 | 0x02 :	\
-						  (0x00 | (mask & 0Xff)) << 8 | 0x02)	/* OFFSET = SEL|CMD */
+#define REQUEST_CAN_CMD2_OFFSET(idx, mask)	\
+	((idx ? ((0x80 | ((mask) & 0xFF)) << 8) :	\
+		((0x00 | ((mask) & 0xFF)) << 8)) | 0x02)
+
 #define CAN_ERR_IDX(idx)		(idx ? 0x08 : 0x00)	/* Read-clear */
 #define CAN_STATUS_IDX(idx)		(idx ? 0x09 : 0x01)
 #define CAN_TX_EVT_IDX(idx)		(idx ? 0x0A : 0x02)
@@ -72,7 +74,7 @@
 
 /* Command 10h */
 #define REQUEST_CAN_CMD10_LEN		0x90
-#define REQUEST_CAN_CMD10_OFFSET(buf_cnt)	((buf_cnt & 0xFF) << 8 | 0x10)	/* OFFSET = SEL|CMD */
+#define REQUEST_CAN_CMD10_OFFSET(buf_cnt)	((buf_cnt & 0xFF) << 8 | 0x10)
 #define CAN_TAG_IDX			0x00
 #define CAN_FLAG_IDX			0x01
 #define CAN_DLC_IDX			0x03
@@ -88,39 +90,38 @@
 
 /* Command 11h */
 #define REQUEST_CAN_CMD11_LEN		0x90
-#define REQUEST_CAN_CMD11_OFFSET(idx, buf_cnt) (idx ? (0x80 | (buf_cnt & 0xFF)) << 8 | 0x11 :	\
-						      (0x00 | (buf_cnt & 0Xff)) << 8 | 0x11)	/* OFFSET = SEL|CMD */
-
-#define SET_BUF16(buf, u16_val) { \
-	*(((u8 *)buf) + 0) = u16_val & 0xFF; \
-	*(((u8 *)buf) + 1) = (u16_val >> 8) & 0xFF; \
-}
-
-#define SET_BUF32(buf, u32_val) { \
-	*(((u8 *)buf) + 0) = u32_val & 0xFF; \
-	*(((u8 *)buf) + 1) = (u32_val >> 8) & 0xFF; \
-	*(((u8 *)buf) + 2) = (u32_val >> 16) & 0xFF; \
-	*(((u8 *)buf) + 3) = (u32_val >> 24) & 0xFF; \
-}
-
-struct nct6694_canfd_data {
-	struct nct6694 *nct6694;
-	struct nct6694_canfd_priv *priv;
-	struct workqueue_struct *rx_workqueue;
-	struct work_struct rx_work;
-	struct work_struct tx_work;
-	struct net_device *ndev[NR_CAN];
-	unsigned char data_buf[REQUEST_CAN_CMD10_LEN];
-};
+#define REQUEST_CAN_CMD11_OFFSET(idx, buf_cnt)	\
+	((idx ? ((0x80 | ((buf_cnt) & 0xFF)) << 8) :	\
+		((0x00 | ((buf_cnt) & 0xFF)) << 8)) | 0x11)
 
 struct nct6694_canfd_priv {
-	struct can_priv can;
-	struct napi_struct napi;
-	struct nct6694_canfd_data *data;
+	struct can_priv can;	/* must be the first member */
+
+	struct nct6694 *nct6694;
+	struct net_device *ndev;
+	struct work_struct rx_work;
+	struct work_struct tx_work;
+	unsigned char data_buf[REQUEST_CAN_CMD10_LEN];
 	unsigned char can_idx;
 };
 
-static struct nct6694_canfd_data *data;
+static inline void set_buf16(void *buf, u16 u16_val)
+{
+	u8 *p = (u8 *)buf;
+
+	p[0] = u16_val & 0xFF;
+	p[1] = (u16_val >> 8) & 0xFF;
+}
+
+static inline void set_buf32(void *buf, u32 u32_val)
+{
+	u8 *p = (u8 *)buf;
+
+	p[0] = u32_val & 0xFF;
+	p[1] = (u32_val >> 8) & 0xFF;
+	p[2] = (u32_val >> 16) & 0xFF;
+	p[3] = (u32_val >> 24) & 0xFF;
+}
 
 static const struct can_bittiming_const nct6694_canfd_bittiming_nominal_const = {
 	.name = DRVNAME,
@@ -146,25 +147,24 @@ static const struct can_bittiming_const nct6694_canfd_bittiming_data_const = {
 	.brp_inc = 1,
 };
 
-static void nct6694_canfd_set_bittiming(struct net_device *ndev, unsigned char *buf)
+static void nct6694_canfd_set_bittiming(struct net_device *ndev,
+					unsigned char *buf)
 {
 	struct nct6694_canfd_priv *priv = netdev_priv(ndev);
 	const struct can_bittiming *n_bt = &priv->can.bittiming;
 	const struct can_bittiming *d_bt = &priv->can.data_bittiming;
 
-	SET_BUF32(&buf[CAN_NBR_IDX], n_bt->bitrate);
-	SET_BUF32(&buf[CAN_DBR_IDX], d_bt->bitrate);
+	set_buf32(&buf[CAN_NBR_IDX], n_bt->bitrate);
+	set_buf32(&buf[CAN_DBR_IDX], d_bt->bitrate);
 
 	pr_info("%s: can(%d): NBR = %d, DBR = %d\n", __func__, priv->can_idx,
-							       n_bt->bitrate,
-							       d_bt->bitrate);
+		n_bt->bitrate, d_bt->bitrate);
 }
 
 static int nct6694_canfd_start(struct net_device *ndev)
 {
 	int ret;
 	struct nct6694_canfd_priv *priv = netdev_priv(ndev);
-	struct nct6694_canfd_data *data = priv->data;
 	unsigned char buf[REQUEST_CAN_CMD0_LEN] = {0};
 	u16 temp = 0;
 
@@ -174,17 +174,17 @@ static int nct6694_canfd_start(struct net_device *ndev)
 		temp |= CAN_CTRL1_MON;
 
 	if ((priv->can.ctrlmode & CAN_CTRLMODE_FD) &&
-		 priv->can.ctrlmode & CAN_CTRLMODE_FD_NON_ISO)
+	    priv->can.ctrlmode & CAN_CTRLMODE_FD_NON_ISO)
 		temp |= CAN_CTRL1_NISO;
 
 	if (priv->can.ctrlmode & CAN_CTRLMODE_LOOPBACK)
 		temp |= CAN_CTRL1_LBCK;
 
-	SET_BUF16(&buf[CAN_CTRL1_IDX], temp);
+	set_buf16(&buf[CAN_CTRL1_IDX], temp);
 
-	ret = nct6694_setusb_wdata(data->nct6694, REQUEST_CAN_MOD,
-				   REQUEST_CAN_CMD0_OFFSET(priv->can_idx),
-				   REQUEST_CAN_CMD0_LEN, buf);
+	ret = nct6694_write_msg(priv->nct6694, REQUEST_CAN_MOD,
+				REQUEST_CAN_CMD0_OFFSET(priv->can_idx),
+				REQUEST_CAN_CMD0_LEN, buf);
 	if (ret < 0) {
 		pr_err("%s: Failed to set data bittiming\n", __func__);
 		return ret;
@@ -221,19 +221,16 @@ static int nct6694_canfd_get_berr_counter(const struct net_device *ndev,
 					  struct can_berr_counter *bec)
 {
 	struct nct6694_canfd_priv *priv = netdev_priv(ndev);
-	struct nct6694_canfd_data *data = priv->data;
 	unsigned char mask = CAN_EVENT_REC | CAN_EVENT_TEC;
 	unsigned char buf[REQUEST_CAN_CMD2_LEN] = {0};
 	int ret;
 
-	ret = nct6694_getusb(data->nct6694, REQUEST_CAN_MOD,
-			     REQUEST_CAN_CMD2_OFFSET(priv->can_idx, mask),
-			     REQUEST_CAN_CMD2_LEN, 0x00, REQUEST_CAN_CMD2_LEN,
-			     (unsigned char *)&buf);
-	if (ret < 0) {
-		pr_err("%s: Failed to get data from usb device!\n", __func__);
+	ret = nct6694_read_msg(priv->nct6694, REQUEST_CAN_MOD,
+			       REQUEST_CAN_CMD2_OFFSET(priv->can_idx, mask),
+			       REQUEST_CAN_CMD2_LEN, 0x00,
+			       REQUEST_CAN_CMD2_LEN, (unsigned char *)&buf);
+	if (ret < 0)
 		return -EINVAL;
-	}
 
 	bec->rxerr = buf[CAN_REC_IDX(priv->can_idx)];
 	bec->txerr = buf[CAN_TEC_IDX(priv->can_idx)];
@@ -251,7 +248,6 @@ static int nct6694_canfd_open(struct net_device *ndev)
 
 	ret = nct6694_canfd_start(ndev);
 	if (ret) {
-		pr_err("%s: Failed to start CAN controller\n", __func__);
 		close_candev(ndev);
 		return ret;
 	}
@@ -270,12 +266,14 @@ static int nct6694_canfd_close(struct net_device *ndev)
 	return 0;
 }
 
-static netdev_tx_t nct6694_canfd_start_xmit(struct sk_buff *skb, struct net_device *ndev)
+static netdev_tx_t nct6694_canfd_start_xmit(struct sk_buff *skb,
+					    struct net_device *ndev)
 {
 	struct nct6694_canfd_priv *priv = netdev_priv(ndev);
-	int can_idx = priv->can_idx;
+	struct nct6694 *nct6694 = priv->nct6694;
 	struct canfd_frame *cf = (struct canfd_frame *)skb->data;
 	struct net_device_stats *stats = &ndev->stats;
+	int can_idx = priv->can_idx;
 	u32 txid = 0;
 	int i;
 	unsigned int echo_byte;
@@ -284,13 +282,14 @@ static netdev_tx_t nct6694_canfd_start_xmit(struct sk_buff *skb, struct net_devi
 	if (can_dropped_invalid_skb(ndev, skb))
 		return NETDEV_TX_OK;
 
+	/*
+	 * No check for NCT66794 because the TX bit is read-clear
+	 * and may be read-cleared by other function
+	 * Just check the result of tx command.
+	 */
 	/* Check if the TX buffer is full */
-	/* No check for NCT6694 because the TX bit is read-clear and may be read-cleared by other function. */
-	/* Just check the result of tx command. */
-
 	netif_stop_queue(ndev);
 
-	/* set the index of CAN dev */
 	if (can_idx == 0)
 		data_buf[CAN_TAG_IDX] = CAN_TAG_CAN0;
 	else
@@ -305,11 +304,11 @@ static netdev_tx_t nct6694_canfd_start_xmit(struct sk_buff *skb, struct net_devi
 		 * correct ID.
 		 */
 		data_buf[CAN_FLAG_IDX] |= CAN_FLAG_EFF;
-
-	} else
+	} else {
 		txid = cf->can_id & CAN_SFF_MASK;
+	}
 
-	SET_BUF32(&data_buf[CAN_ID_IDX], txid);
+	set_buf32(&data_buf[CAN_ID_IDX], txid);
 
 	data_buf[CAN_DLC_IDX] = cf->len;
 
@@ -328,8 +327,8 @@ static netdev_tx_t nct6694_canfd_start_xmit(struct sk_buff *skb, struct net_devi
 
 	can_put_echo_skb(skb, ndev, 0, 0);
 
-	memcpy(data->data_buf, data_buf, REQUEST_CAN_CMD10_LEN);
-	queue_work(data->rx_workqueue, &data->tx_work);
+	memcpy(priv->data_buf, data_buf, REQUEST_CAN_CMD10_LEN);
+	queue_work(nct6694->async_workqueue, &priv->tx_work);
 
 	stats->tx_bytes += cf->len;
 	stats->tx_packets++;
@@ -342,11 +341,14 @@ static netdev_tx_t nct6694_canfd_start_xmit(struct sk_buff *skb, struct net_devi
 
 static void nct6694_canfd_tx_work(struct work_struct *work)
 {
-	int ret;
+	struct nct6694_canfd_priv *priv;
 
-	ret = nct6694_setusb_wdata(data->nct6694, REQUEST_CAN_MOD,
-				   REQUEST_CAN_CMD10_OFFSET(1),
-				   REQUEST_CAN_CMD10_LEN, data->data_buf);
+	priv = container_of(work, struct nct6694_canfd_priv, tx_work);
+
+	nct6694_write_msg(priv->nct6694, REQUEST_CAN_MOD,
+			  REQUEST_CAN_CMD10_OFFSET(1),
+			  REQUEST_CAN_CMD10_LEN,
+			  priv->data_buf);
 }
 
 static int nuv_canfd_handle_lost_msg(struct net_device *ndev)
@@ -376,23 +378,23 @@ static int nuv_canfd_handle_lost_msg(struct net_device *ndev)
 
 static void nuv_canfd_read_fifo(struct net_device *ndev)
 {
-	struct net_device_stats *stats = &ndev->stats;
 	struct nct6694_canfd_priv *priv = netdev_priv(ndev);
-	int can_idx = priv->can_idx;
+	struct net_device_stats *stats = &ndev->stats;
 	struct canfd_frame *cf;
 	struct sk_buff *skb;
+	int can_idx = priv->can_idx;
 	u32 id;
 	int ret;
 	u8 data_buf[REQUEST_CAN_CMD11_LEN] = {0};
 	u8 fd_format = 0;
 	int i;
 
-	ret = nct6694_getusb(data->nct6694, REQUEST_CAN_MOD,
-			     REQUEST_CAN_CMD11_OFFSET(can_idx, 1),
-			     REQUEST_CAN_CMD11_LEN, 0, REQUEST_CAN_CMD11_LEN,
-			     data_buf);
+	ret = nct6694_read_msg(priv->nct6694, REQUEST_CAN_MOD,
+			       REQUEST_CAN_CMD11_OFFSET(can_idx, 1),
+			       REQUEST_CAN_CMD11_LEN, 0, REQUEST_CAN_CMD11_LEN,
+			       data_buf);
 	if (ret < 0)
-		pr_err("%s: Failed to get usb message: %d\n", __func__, ret);
+		return;
 
 	/* Check type of frame and create skb */
 	fd_format = data_buf[CAN_FLAG_IDX] & CAN_FLAG_FD;
@@ -406,7 +408,6 @@ static void nuv_canfd_read_fifo(struct net_device *ndev)
 		return;
 	}
 
-	/* Get length */
 	cf->len = data_buf[CAN_DLC_IDX];
 
 	/* Get ID and set flag by its type(Standard ID format or Ext ID format) */
@@ -429,50 +430,44 @@ static void nuv_canfd_read_fifo(struct net_device *ndev)
 	}
 
 	/* Set RTR and BRS */
-	if (!fd_format &&
-	    (data_buf[CAN_FLAG_IDX] & CAN_FLAG_RTR)) {
+	if (!fd_format && (data_buf[CAN_FLAG_IDX] & CAN_FLAG_RTR)) {
 		cf->can_id |= CAN_RTR_FLAG;
 	} else {
 		if (data_buf[CAN_FLAG_IDX] & CAN_FLAG_BRS)
 			cf->flags |= CANFD_BRS;
 
-		/* Read data from HW */
 		for (i = 0; i < cf->len; i++)
-			*(u8 *)(cf->data+i) = data_buf[CAN_DATA_IDX + i];
+			*(u8 *)(cf->data + i) = data_buf[CAN_DATA_IDX + i];
 	}
 
 	/* Remove the packet from FIFO */
 	stats->rx_packets++;
 	stats->rx_bytes += cf->len;
-
 	netif_receive_skb(skb);
 }
-
 
 static int nct6694_canfd_do_rx_poll(struct net_device *ndev, int quota)
 {
 	struct nct6694_canfd_priv *priv = netdev_priv(ndev);
 	int can_idx = priv->can_idx;
-	int ret;
 	u32 pkts = 0;
 	u8 data_buf_can_evt[REQUEST_CAN_CMD2_LEN] = {0};
 	u8 mask_rx = CAN_EVENT_RX_EVT;
 	u8 rx_evt;
 
 	for (;;) {
-		ret = nct6694_getusb(data->nct6694, REQUEST_CAN_MOD,
-				     REQUEST_CAN_CMD2_OFFSET(can_idx, mask_rx),
-				     REQUEST_CAN_CMD2_LEN, 0, REQUEST_CAN_CMD2_LEN,
-				     data_buf_can_evt);
-		if (ret < 0)
-			pr_err("%s: Failed to get usb message: %d\n", __func__, ret);
+		nct6694_read_msg(priv->nct6694, REQUEST_CAN_MOD,
+				 REQUEST_CAN_CMD2_OFFSET(can_idx, mask_rx),
+				 REQUEST_CAN_CMD2_LEN, 0,
+				 REQUEST_CAN_CMD2_LEN, data_buf_can_evt);
 
 		/* Handle lost messages when handling RX because it is read-cleared reg */
 		rx_evt = data_buf_can_evt[CAN_RX_EVT_IDX(can_idx)];
 		if (rx_evt & CAN_EVENT_RX_EVT_DATA_LOST)
 			nuv_canfd_handle_lost_msg(ndev);
 
-		if ((rx_evt & CAN_EVENT_RX_EVT_DATA_IN) == 0) /* No data */
+		/* No data */
+		if ((rx_evt & CAN_EVENT_RX_EVT_DATA_IN) == 0)
 			break;
 
 		if (quota <= 0)
@@ -489,8 +484,6 @@ static int nct6694_canfd_do_rx_poll(struct net_device *ndev, int quota)
 static int nct6694_canfd_handle_lec_err(struct net_device *ndev, u8 bus_err)
 {
 	struct nct6694_canfd_priv *priv = netdev_priv(ndev);
-
-	int can_idx = priv->can_idx;
 	struct net_device_stats *stats = &ndev->stats;
 	struct can_frame *cf;
 	struct sk_buff *skb;
@@ -498,19 +491,17 @@ static int nct6694_canfd_handle_lec_err(struct net_device *ndev, u8 bus_err)
 	if (bus_err == CAN_EVENT_ERR_NO_ERROR)
 		return 0;
 
-	pr_info("%s: d:%d\r\n", __func__,  can_idx);
-
 	priv->can.can_stats.bus_error++;
 	stats->rx_errors++;
 
 	/* Propagate the error condition to the CAN stack. */
 	skb = alloc_can_err_skb(ndev, &cf);
+
 	if (unlikely(!skb))
 		return 0;
 
 	/* Read the error counter register and check for new errors. */
 	cf->can_id |= CAN_ERR_PROT | CAN_ERR_BUSERROR;
-
 
 	switch (bus_err) {
 	case CAN_EVENT_ERR_CRC_ERROR:
@@ -530,7 +521,9 @@ static int nct6694_canfd_handle_lec_err(struct net_device *ndev, u8 bus_err)
 		break;
 
 	case CAN_EVENT_ERR_BIT_ERROR:
-		cf->data[2] |= CAN_ERR_PROT_BIT | CAN_ERR_PROT_BIT0 | CAN_ERR_PROT_BIT1;
+		cf->data[2] |= CAN_ERR_PROT_BIT |
+			       CAN_ERR_PROT_BIT0 |
+			       CAN_ERR_PROT_BIT1;
 		break;
 
 	case CAN_EVENT_ERR_TIMEOUT_ERROR:
@@ -539,7 +532,10 @@ static int nct6694_canfd_handle_lec_err(struct net_device *ndev, u8 bus_err)
 
 	case CAN_EVENT_ERR_UNKNOWN_ERROR:
 		cf->data[2] |= CAN_ERR_PROT_UNSPEC;
-		/* It means 'unspecified'(the value is '0'). But it is not sure if it's ok to send an error package without specific error bit. */
+		/* It means 'unspecified'(the value is '0').
+		 * But it is not sure if it's ok to send an error package
+		 * without specific error bit.
+		 */
 		break;
 
 	default:
@@ -547,7 +543,6 @@ static int nct6694_canfd_handle_lec_err(struct net_device *ndev, u8 bus_err)
 	}
 
 	/* Reset the error counter, ack the IRQ and re-enable the counter. */
-	/* Read-cleared. Do nothing. */
 	stats->rx_packets++;
 	stats->rx_bytes += cf->can_dlc;
 	netif_receive_skb(skb);
@@ -556,15 +551,13 @@ static int nct6694_canfd_handle_lec_err(struct net_device *ndev, u8 bus_err)
 }
 
 static int nct6694_canfd_handle_state_change(struct net_device *ndev,
-					 enum can_state new_state)
+					     enum can_state new_state)
 {
 	struct nct6694_canfd_priv *priv = netdev_priv(ndev);
 	struct net_device_stats *stats = &ndev->stats;
 	struct can_frame *cf;
 	struct sk_buff *skb;
 	struct can_berr_counter bec;
-
-	pr_info("%s: \r\n", __func__);
 
 	switch (new_state) {
 	case CAN_STATE_ERROR_ACTIVE:
@@ -632,39 +625,39 @@ static int nct6694_canfd_handle_state_change(struct net_device *ndev,
 	return 1;
 }
 
-static int nct6694_canfd_handle_state_errors(struct net_device *ndev, u8 *can_evt_buf)
+static int nct6694_canfd_handle_state_errors(struct net_device *ndev,
+					     u8 *can_evt_buf)
 {
 	struct nct6694_canfd_priv *priv = netdev_priv(ndev);
 	int can_idx = priv->can_idx;
-	//u32 stcmd = readl(priv->base + NUV_CANFD_STCMD);
 	int work_done = 0;
 	u8 can_status;
 
 	can_status = can_evt_buf[CAN_STATUS_IDX(can_idx)];
 
-	if ((can_status == CAN_EVENT_STATUS_ERROR_ACTIVE) &&
-	    (priv->can.state != CAN_STATE_ERROR_ACTIVE)) {
+	if (can_status == CAN_EVENT_STATUS_ERROR_ACTIVE &&
+	    priv->can.state != CAN_STATE_ERROR_ACTIVE) {
 		netdev_dbg(ndev, "Error, entered active state\n");
 		work_done += nct6694_canfd_handle_state_change(ndev,
 							       CAN_STATE_ERROR_ACTIVE);
 	}
 
-	if ((can_status == CAN_EVENT_STATUS_WARNING) &&
-	    (priv->can.state != CAN_STATE_ERROR_WARNING)) {
+	if (can_status == CAN_EVENT_STATUS_WARNING &&
+	    priv->can.state != CAN_STATE_ERROR_WARNING) {
 		netdev_dbg(ndev, "Error, entered warning state\n");
 		work_done += nct6694_canfd_handle_state_change(ndev,
 							       CAN_STATE_ERROR_WARNING);
 	}
 
-	if ((can_status == CAN_EVENT_STATUS_ERROR_PASSIVE) &&
-	    (priv->can.state != CAN_STATE_ERROR_PASSIVE)) {
+	if (can_status == CAN_EVENT_STATUS_ERROR_PASSIVE &&
+	    priv->can.state != CAN_STATE_ERROR_PASSIVE) {
 		netdev_dbg(ndev, "Error, entered passive state\n");
 		work_done += nct6694_canfd_handle_state_change(ndev,
 							       CAN_STATE_ERROR_PASSIVE);
 	}
 
-	if ((can_status == CAN_EVENT_STATUS_BUS_OFF) &&
-	    (priv->can.state != CAN_STATE_BUS_OFF)) {
+	if (can_status == CAN_EVENT_STATUS_BUS_OFF &&
+	    priv->can.state != CAN_STATE_BUS_OFF) {
 		netdev_dbg(ndev, "Error, entered bus-off state\n");
 		work_done += nct6694_canfd_handle_state_change(ndev,
 							       CAN_STATE_BUS_OFF);
@@ -679,48 +672,48 @@ static void nct6694_canfd_rx_work(struct work_struct *work)
 	struct nct6694_canfd_priv *priv;
 	struct net_device *ndev;
 	struct net_device_stats *stats;
-	int i, ret;
-	int can_idx;
+	int ret, can_idx;
 	int work_done = 0;
 	int quota = RX_QUATA;
 	u8 data_buf_can_evt[REQUEST_CAN_CMD2_LEN] = {0};
 	u8 bus_err;
 	u8 mask_sts = CAN_EVENT_ERR | CAN_EVENT_STATUS;
 
-	for (i = 0; i < NR_CAN; i++) {
-		ndev = data->ndev[i];
-		priv = netdev_priv(ndev);
-		can_idx = priv->can_idx;
-		stats = &ndev->stats;
+	priv = container_of(work, struct nct6694_canfd_priv, rx_work);
+	ndev = priv->ndev;
+	can_idx = priv->can_idx;
+	stats = &ndev->stats;
 
-		ret = nct6694_getusb(data->nct6694, REQUEST_CAN_MOD,
-				     REQUEST_CAN_CMD2_OFFSET(can_idx, mask_sts),
-				     REQUEST_CAN_CMD2_LEN, 0, REQUEST_CAN_CMD2_LEN,
-				     data_buf_can_evt);
-		if (ret < 0)
-			pr_err("%s: Failed to get usb message\n", __func__);
+	ret = nct6694_read_msg(priv->nct6694, REQUEST_CAN_MOD,
+			       REQUEST_CAN_CMD2_OFFSET(can_idx, mask_sts),
+			       REQUEST_CAN_CMD2_LEN, 0, REQUEST_CAN_CMD2_LEN,
+			       data_buf_can_evt);
+	if (ret < 0)
+		return;
 
-		/* Handle bus state changes */
-		work_done += nct6694_canfd_handle_state_errors(ndev, data_buf_can_evt);
+	/* Handle bus state changes */
+	work_done += nct6694_canfd_handle_state_errors(ndev, data_buf_can_evt);
 
-		/* Handle lec errors on the bus */
-		if (priv->can.ctrlmode & CAN_CTRLMODE_BERR_REPORTING) {
-			bus_err = data_buf_can_evt[CAN_ERR_IDX(can_idx)];
-			work_done += nct6694_canfd_handle_lec_err(ndev, bus_err);
-		}
-
-		/* Check data lost and handle normal messages on RX.
-		 *  Don't check rx fifo-empty here because the data-lost bit in the same reg is read-cleared,
-		 *  we handle it when handling rx event
-		 */
-
-		work_done += nct6694_canfd_do_rx_poll(ndev, quota - work_done);
+	/* Handle lec errors on the bus */
+	if (priv->can.ctrlmode & CAN_CTRLMODE_BERR_REPORTING) {
+		bus_err = data_buf_can_evt[CAN_ERR_IDX(can_idx)];
+		work_done += nct6694_canfd_handle_lec_err(ndev, bus_err);
 	}
+
+	/* Check data lost and handle normal messages on RX.
+	 * Don't check rx fifo-empty here because the data-lost bit in the same reg is read-cleared,
+	 * we handle it when handling rx event
+	 */
+
+	work_done += nct6694_canfd_do_rx_poll(ndev, quota - work_done);
 }
 
-void nct6694_start_rx(struct nct6694 *nct6694)
+static void nct6694_can_handler(void *private_data)
 {
-	queue_work(data->rx_workqueue, &data->rx_work);
+	struct nct6694_canfd_priv *priv = private_data;
+	struct nct6694 *nct6694 = priv->nct6694;
+
+	queue_work(nct6694->async_workqueue, &priv->rx_work);
 }
 
 static const struct net_device_ops nct6694_canfd_netdev_ops = {
@@ -732,94 +725,85 @@ static const struct net_device_ops nct6694_canfd_netdev_ops = {
 
 static int nct6694_canfd_probe(struct platform_device *pdev)
 {
+	const struct mfd_cell *cell = mfd_get_cell(pdev);
 	struct nct6694 *nct6694 = dev_get_drvdata(pdev->dev.parent);
+	struct nct6694_canfd_priv *priv;
+	struct net_device *ndev;
 	unsigned int can_clk;
-	int i, j;
 	int ret;
 
-	data = kzalloc(sizeof(*data), GFP_KERNEL);
-	if (!data)
-		return -ENOMEM;
-
-	ret = nct6694_getusb(nct6694, REQUEST_CAN_MOD, REQUEST_CAN_CMD1_OFFSET,
-			     REQUEST_CAN_CMD1_LEN, CAN_CLK_IDX, CAN_CLK_LEN,
-			     (unsigned char *)&can_clk);
+	ret = nct6694_read_msg(nct6694, REQUEST_CAN_MOD,
+			       REQUEST_CAN_CMD1_OFFSET,
+			       REQUEST_CAN_CMD1_LEN,
+			       CAN_CLK_IDX, CAN_CLK_LEN,
+			       (unsigned char *)&can_clk);
 	if (ret < 0) {
-		pr_err("%s: Failed to get usb message\n", __func__);
-		return -EINVAL;
+		dev_err(&pdev->dev, "%s: Failed to get can clock frequency: %pe\n",
+			__func__, ERR_PTR(ret));
+		return ret;
 	}
+
 	pr_info("can_clk = %d\n", le32_to_cpu(can_clk));
 
-	nct6694->can_handler = nct6694_start_rx;
+	ndev = alloc_candev(sizeof(struct nct6694_canfd_priv), 1);
+	if (!ndev)
+		return -ENOMEM;
 
-	data->nct6694 = nct6694;
-	data->rx_workqueue = create_singlethread_workqueue("rx_workqueue");
-	INIT_WORK(&data->rx_work, nct6694_canfd_rx_work);
-	INIT_WORK(&data->tx_work, nct6694_canfd_tx_work);
+	ndev->flags |= IFF_ECHO;
+	ndev->netdev_ops = &nct6694_canfd_netdev_ops;
 
-	for (i = 0; i < NR_CAN; i++) {
-		struct nct6694_canfd_priv *priv;
+	priv = netdev_priv(ndev);
+	priv->nct6694 = nct6694;
+	priv->ndev = ndev;
 
-		data->ndev[i] = alloc_candev(sizeof(*priv), 1);
-		if (!data->ndev[i])
-			return -ENOMEM;
-
-		data->ndev[i]->flags |= IFF_ECHO;
-		data->ndev[i]->netdev_ops = &nct6694_canfd_netdev_ops;
-
-		priv = netdev_priv(data->ndev[i]);
-		priv->data = data;
-		priv->can_idx = i;
-
-		priv->can.state = CAN_STATE_STOPPED;
-		priv->can.clock.freq = le32_to_cpu(can_clk);
-		priv->can.bittiming_const = &nct6694_canfd_bittiming_nominal_const;
-		priv->can.data_bittiming_const = &nct6694_canfd_bittiming_data_const;
-		priv->can.do_set_mode = nct6694_canfd_set_mode;
-		priv->can.do_get_berr_counter = nct6694_canfd_get_berr_counter;
-
-		priv->can.ctrlmode = CAN_CTRLMODE_FD;
-
-		priv->can.ctrlmode_supported = CAN_CTRLMODE_LOOPBACK	|
-					       CAN_CTRLMODE_LISTENONLY	|
-					       CAN_CTRLMODE_FD		|
-					       CAN_CTRLMODE_FD_NON_ISO	|
-					       CAN_CTRLMODE_BERR_REPORTING;
-
-		SET_NETDEV_DEV(data->ndev[i], &pdev->dev);
-
-		ret = register_candev(data->ndev[i]);
-		if (ret) {
-			dev_err(&pdev->dev, "register_candev failed: %d", ret);
-			goto err;
-		}
+	ret = nct6694_register_handler(nct6694, CAN_IRQ_STATUS,
+				       nct6694_can_handler, priv);
+	if (ret) {
+		dev_err(&pdev->dev, "%s:  Failed to register handler: %pe\n",
+			__func__, ERR_PTR(ret));
+		free_candev(ndev);
+		return ret;
 	}
-	queue_work(data->rx_workqueue, &data->rx_work);
 
-	dev_info(&pdev->dev, "Probe device :%s", pdev->name);
+	INIT_WORK(&priv->rx_work, nct6694_canfd_rx_work);
+	INIT_WORK(&priv->tx_work, nct6694_canfd_tx_work);
+
+	priv->can_idx = cell->id;
+	priv->can.state = CAN_STATE_STOPPED;
+	priv->can.clock.freq = le32_to_cpu(can_clk);
+	priv->can.bittiming_const = &nct6694_canfd_bittiming_nominal_const;
+	priv->can.data_bittiming_const = &nct6694_canfd_bittiming_data_const;
+	priv->can.do_set_mode = nct6694_canfd_set_mode;
+	priv->can.do_get_berr_counter = nct6694_canfd_get_berr_counter;
+
+	priv->can.ctrlmode = CAN_CTRLMODE_FD;
+
+	priv->can.ctrlmode_supported = CAN_CTRLMODE_LOOPBACK		|
+				       CAN_CTRLMODE_LISTENONLY		|
+				       CAN_CTRLMODE_FD			|
+				       CAN_CTRLMODE_FD_NON_ISO		|
+				       CAN_CTRLMODE_BERR_REPORTING;
+
+	platform_set_drvdata(pdev, priv);
+	SET_NETDEV_DEV(priv->ndev, &pdev->dev);
+
+	ret = register_candev(priv->ndev);
+	if (ret) {
+		dev_err(&pdev->dev, "register_candev failed: %d\n", ret);
+		free_candev(ndev);
+		return ret;
+	}
 
 	return 0;
-
-err:
-	for (j = 0; j < i; j++) {
-		unregister_candev(data->ndev[i]);
-		free_candev(data->ndev[i]);
-	}
-	return -ENOMEM;
 }
 
 static int nct6694_canfd_remove(struct platform_device *pdev)
 {
-	int i, ret;
+	struct nct6694_canfd_priv *priv = platform_get_drvdata(pdev);
 
-	ret = cancel_work_sync(&data->rx_work);
-	flush_workqueue(data->rx_workqueue);
-	destroy_workqueue(data->rx_workqueue);
-
-	for (i = 0; i < NR_CAN; i++) {
-		unregister_candev(data->ndev[i]);
-		free_candev(data->ndev[i]);
-	}
+	cancel_work_sync(&priv->rx_work);
+	unregister_candev(priv->ndev);
+	free_candev(priv->ndev);
 
 	return 0;
 }
@@ -838,7 +822,6 @@ static int __init nct6694_init(void)
 
 	err = platform_driver_register(&nct6694_canfd_driver);
 	if (!err) {
-		pr_info(DRVNAME ": platform_driver_register\n");
 		if (err)
 			platform_driver_unregister(&nct6694_canfd_driver);
 	}
