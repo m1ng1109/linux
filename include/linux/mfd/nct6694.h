@@ -1,10 +1,16 @@
-/* SPDX-License-Identifier: GPL-2.0+ */
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) 2024 Nuvoton Technology Corp.
  */
 
-#ifndef __LINUX_MFD_NCT6694_H
-#define __LINUX_MFD_NCT6694_H
+#define NCT6694_DEV_GPIO		"nct6694-gpio"
+#define NCT6694_DEV_I2C			"nct6694-i2c"
+#define NCT6694_DEV_CAN			"nct6694-can"
+#define NCT6694_DEV_WDT			"nct6694-wdt"
+#define NCT6694_DEV_IIO			"nct6694-iio"
+#define NCT6694_DEV_HWMON		"nct6694-hwmon"
+#define NCT6694_DEV_PWM			"nct6694-pwm"
+#define NCT6694_DEV_RTC			"nct6694-rtc"
 
 #define NCT6694_VENDOR_ID		0x0416
 #define NCT6694_PRODUCT_ID		0x200B
@@ -30,40 +36,37 @@
 #define CAN_IRQ_STATUS			BIT(2)
 #define RTC_IRQ_STATUS			BIT(3)
 
-#define URB_TIMEOUT			0
+#define URB_TIMEOUT			1000
 
 struct nct6694 {
 	struct usb_device *udev;
 	struct urb *int_in_urb;
 	struct mutex access_lock;
+	struct list_head handler_list;
 	struct workqueue_struct *async_workqueue;
 	struct work_struct async_work;
-
 	unsigned char *tx_buffer;
 	unsigned char *rx_buffer;
 	unsigned char *cmd_buffer;
 	unsigned char *int_buffer;
 	unsigned char err_status;
 
-	u8 MOD;
-	u16 OFFSET;
-	u16 LEN;
-	unsigned char *buf;
+	spinlock_t lock;
 	long timeout;
-	int maxp;	/* Bulk pipe maximum packet for each transaction*/
-
-	void (*gpio_handler)(struct nct6694 *nct6694);
-	void (*can_handler)(struct nct6694 *nct6694);
-	void (*rtc_handler)(struct nct6694 *nct6694);
+	/* Bulk pipe maximum packet for each transaction*/
+	int maxp;
 };
 
-extern int nct6694_getusb(struct nct6694 *nct6694, u8 MOD, u16 OFFSET, u16 LEN,
-			  u8 rd_idx, u8 rd_len, unsigned char *buf);
-extern int nct6694_setusb_rdata(struct nct6694 *nct6694, u8 MOD, u16 OFFSET,
-				u16 LEN, u8 rd_idx, u8 rd_len, unsigned char *buf);
-extern int nct6694_setusb_wdata(struct nct6694 *nct6694, u8 MOD, u16 OFFSET,
-				u16 LEN, unsigned char *buf);
-extern void nct6694_setusb_async(struct nct6694 *nct6694, u8 MOD, u16 OFFSET,
-				 u16 LEN, unsigned char *buf);
+struct nct6694_handler_entry {
+	int bit_position;
+	void (*handler)(void *private_data);
+	void *private_data;
+	struct list_head list;
+};
 
-#endif
+int nct6694_register_handler(struct nct6694 *nct6694, int bit_position,
+			     void (*handler)(void *), void *private_data);
+int nct6694_read_msg(struct nct6694 *nct6694, u8 mod, u16 offset,
+		     u16 length, u8 rd_idx, u8 rd_len, unsigned char *buf);
+int nct6694_write_msg(struct nct6694 *nct6694, u8 mod, u16 offset,
+		      u16 length, unsigned char *buf);
