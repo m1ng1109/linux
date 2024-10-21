@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0+
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Nuvoton NCT6694 PWM driver based on USB interface.
  *
@@ -15,7 +15,7 @@
 #define DRVNAME "nct6694-pwm"
 
 #define NR_PWM	10
-#define MAX_PERIOD_NS	40000	/* PWM Maximum Frequency = 25kHz*/
+#define MAX_PERIOD_NS	40000		/* PWM Maximum Frequency = 25kHz*/
 #define PERIOD_NS_CONST	10200000	/* Period_ns to Freq_reg */
 
 /* Host interface */
@@ -48,7 +48,7 @@
 /*
  *		Frequency <-> Period
  * (10^9 * 255) / (25000 * Freq_reg) = Period_ns
- *		10200000 / Freq_reg			 = Period_ns
+ *		10200000 / Freq_reg  = Period_ns
  *
  * | Freq_reg | Freq_Hz | Period_ns |
  * |  1 (01h  |  98.039 |  10200000 |
@@ -86,7 +86,8 @@ static int nct6694_pwm_request(struct pwm_chip *chip, struct pwm_device *pwm)
 	bool mal_en = mal_enable & BIT(pwm->hwpwm % 8);
 
 	if (!(ch_en && mal_en)) {
-		pr_err("%s: PWM(%d) is running in other mode!", __func__, pwm->hwpwm);
+		pr_err("%s: PWM(%d) is running in other mode!\n",
+		       __func__, pwm->hwpwm);
 		return -EINVAL;
 	}
 
@@ -126,13 +127,12 @@ static int nct6694_pwm_apply(struct pwm_chip *chip,
 	/* (10^9 * 255) / (25000 * Freq_reg) = Period_ns */
 	freq_reg = (unsigned char)(PERIOD_NS_CONST / state->period);
 	data->hwmon_cmd0_buf[HWMON_PWM_FREQ_IDX(pwm->hwpwm)] = freq_reg;
-	ret = nct6694_setusb_wdata(data->nct6694, REQUEST_HWMON_MOD,
-				   REQUEST_HWMON_CMD0_OFFSET, REQUEST_HWMON_CMD0_LEN,
-				   data->hwmon_cmd0_buf);
-	if (ret) {
-		pr_err("%s: Failed to set hwmon device!", __func__);
+	ret = nct6694_write_msg(data->nct6694, REQUEST_HWMON_MOD,
+				REQUEST_HWMON_CMD0_OFFSET,
+				REQUEST_HWMON_CMD0_LEN,
+				data->hwmon_cmd0_buf);
+	if (ret)
 		return -EIO;
-	}
 
 	/* Duty = duty * 0xFF */
 	duty = (unsigned char)(state->duty_cycle * 0xFF / state->period);
@@ -141,14 +141,11 @@ static int nct6694_pwm_apply(struct pwm_chip *chip,
 		data->pwm_cmd1_buf[PWM_MAL_EN(pwm->hwpwm / 8)] |= BIT(pwm->hwpwm  % 8);
 	else
 		data->pwm_cmd1_buf[PWM_MAL_EN(pwm->hwpwm / 8)] &= ~BIT(pwm->hwpwm  % 8);
-	ret = nct6694_setusb_wdata(data->nct6694, REQUEST_PWM_MOD,
-				   REQUEST_PWM_CMD1_OFFSET, REQUEST_PWM_CMD1_LEN,
-				   data->pwm_cmd1_buf);
-	if (ret) {
-		pr_err("%s: Failed to set pwm device!", __func__);
+	ret = nct6694_write_msg(data->nct6694, REQUEST_PWM_MOD,
+				REQUEST_PWM_CMD1_OFFSET, REQUEST_PWM_CMD1_LEN,
+				data->pwm_cmd1_buf);
+	if (ret)
 		return -EIO;
-	}
-
 
 	return 0;
 }
@@ -164,29 +161,27 @@ static int nct6694_pwm_init(struct nct6694_pwm_data *data)
 	struct nct6694 *nct6694 = data->nct6694;
 	int ret;
 
-	ret = nct6694_getusb(nct6694, REQUEST_HWMON_MOD, REQUEST_HWMON_CMD0_OFFSET,
-			     REQUEST_HWMON_CMD0_LEN, 0, REQUEST_HWMON_CMD0_LEN,
-			     data->hwmon_cmd0_buf);
-	if (ret) {
-		pr_err("%s: Failed to get HWMON registers!", __func__);
-		goto err;
-	}
-	ret = nct6694_getusb(nct6694, REQUEST_PWM_MOD, REQUEST_PWM_CMD0_OFFSET,
-			     REQUEST_PWM_CMD0_LEN, 0, REQUEST_PWM_CMD0_LEN,
-			     data->pwm_cmd0_buf);
-	if (ret) {
-		pr_err("%s: Failed to get PWM registers!", __func__);
-		goto err;
-	}
-	ret = nct6694_getusb(nct6694, REQUEST_PWM_MOD, REQUEST_PWM_CMD1_OFFSET,
-				      REQUEST_PWM_CMD1_LEN, 0, REQUEST_PWM_CMD1_LEN,
-				      data->pwm_cmd1_buf);
-	if (ret) {
-		pr_err("%s: Failed to get PWM registers!", __func__);
-		goto err;
-	}
+	ret = nct6694_read_msg(nct6694, REQUEST_HWMON_MOD,
+			       REQUEST_HWMON_CMD0_OFFSET,
+			       REQUEST_HWMON_CMD0_LEN, 0,
+			       REQUEST_HWMON_CMD0_LEN,
+			       data->hwmon_cmd0_buf);
+	if (ret)
+		return ret;
 
-err:
+	ret = nct6694_read_msg(nct6694, REQUEST_PWM_MOD,
+			       REQUEST_PWM_CMD0_OFFSET,
+			       REQUEST_PWM_CMD0_LEN, 0,
+			       REQUEST_PWM_CMD0_LEN,
+			       data->pwm_cmd0_buf);
+	if (ret)
+		return ret;
+
+	ret = nct6694_read_msg(nct6694, REQUEST_PWM_MOD,
+			       REQUEST_PWM_CMD1_OFFSET,
+			       REQUEST_PWM_CMD1_LEN, 0,
+			       REQUEST_PWM_CMD1_LEN,
+			       data->pwm_cmd1_buf);
 	return ret;
 }
 
@@ -212,11 +207,9 @@ static int nct6694_pwm_probe(struct platform_device *pdev)
 	/* Register pwm device to PWM framework */
 	ret = devm_pwmchip_add(&pdev->dev, &data->chip);
 	if (ret) {
-		dev_err(&pdev->dev, "Failed to register pwm device!");
+		dev_err(&pdev->dev, "Failed to register pwm device!\n");
 		return ret;
 	}
-
-	dev_info(&pdev->dev, "Probe device: %s", pdev->name);
 
 	return 0;
 }
@@ -240,7 +233,6 @@ static int __init nct6694_init(void)
 
 	err = platform_driver_register(&nct6694_pwm_driver);
 	if (!err) {
-		pr_info(DRVNAME ": platform_driver_register\n");
 		if (err)
 			platform_driver_unregister(&nct6694_pwm_driver);
 	}
@@ -258,4 +250,3 @@ module_exit(nct6694_exit);
 MODULE_DESCRIPTION("USB-pwm driver for NCT6694");
 MODULE_AUTHOR("Tzu-Ming Yu <tmyu0@nuvoton.com>");
 MODULE_LICENSE("GPL");
-
