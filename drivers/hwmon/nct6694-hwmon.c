@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0+
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Nuvoton NCT6694 HWMON driver based on USB interface.
  *
@@ -39,7 +39,6 @@
 #define REQUEST_HWMON_CMD3_LEN		0x08
 #define REQUEST_HWMON_CMD3_OFFSET	0x0003	/* OFFSET = SEL|CMD */
 
-
 struct nct6694_hwmon_data {
 	struct nct6694 *nct6694;
 	struct mutex hwmon_lock;
@@ -50,31 +49,34 @@ struct nct6694_hwmon_data {
 #define NCT6694_HWMON_PWM_CONFIG (HWMON_PWM_INPUT | HWMON_PWM_FREQ)
 
 static const struct hwmon_channel_info *nct6694_info[] = {
-	HWMON_CHANNEL_INFO(fan,	NCT6694_HWMON_FAN_CONFIG,	/* FIN0 */
-				NCT6694_HWMON_FAN_CONFIG,	/* FIN1 */
-				NCT6694_HWMON_FAN_CONFIG,	/* FIN2 */
-				NCT6694_HWMON_FAN_CONFIG,	/* FIN3 */
-				NCT6694_HWMON_FAN_CONFIG,	/* FIN4 */
-				NCT6694_HWMON_FAN_CONFIG,	/* FIN5 */
-				NCT6694_HWMON_FAN_CONFIG,	/* FIN6 */
-				NCT6694_HWMON_FAN_CONFIG,	/* FIN7 */
-				NCT6694_HWMON_FAN_CONFIG,	/* FIN8 */
-				NCT6694_HWMON_FAN_CONFIG),	/* FIN9 */
+	HWMON_CHANNEL_INFO(fan,
+			   NCT6694_HWMON_FAN_CONFIG,	/* FIN0 */
+			   NCT6694_HWMON_FAN_CONFIG,	/* FIN1 */
+			   NCT6694_HWMON_FAN_CONFIG,	/* FIN2 */
+			   NCT6694_HWMON_FAN_CONFIG,	/* FIN3 */
+			   NCT6694_HWMON_FAN_CONFIG,	/* FIN4 */
+			   NCT6694_HWMON_FAN_CONFIG,	/* FIN5 */
+			   NCT6694_HWMON_FAN_CONFIG,	/* FIN6 */
+			   NCT6694_HWMON_FAN_CONFIG,	/* FIN7 */
+			   NCT6694_HWMON_FAN_CONFIG,	/* FIN8 */
+			   NCT6694_HWMON_FAN_CONFIG),	/* FIN9 */
 
-	HWMON_CHANNEL_INFO(pwm, NCT6694_HWMON_PWM_CONFIG,	/* PWM0 */
-				NCT6694_HWMON_PWM_CONFIG,	/* PWM1 */
-				NCT6694_HWMON_PWM_CONFIG,	/* PWM2 */
-				NCT6694_HWMON_PWM_CONFIG,	/* PWM3 */
-				NCT6694_HWMON_PWM_CONFIG,	/* PWM4 */
-				NCT6694_HWMON_PWM_CONFIG,	/* PWM5 */
-				NCT6694_HWMON_PWM_CONFIG,	/* PWM6 */
-				NCT6694_HWMON_PWM_CONFIG,	/* PWM7 */
-				NCT6694_HWMON_PWM_CONFIG,	/* PWM8 */
-				NCT6694_HWMON_PWM_CONFIG),	/* PWM9 */
+	HWMON_CHANNEL_INFO(pwm,
+			   NCT6694_HWMON_PWM_CONFIG,	/* PWM0 */
+			   NCT6694_HWMON_PWM_CONFIG,	/* PWM1 */
+			   NCT6694_HWMON_PWM_CONFIG,	/* PWM2 */
+			   NCT6694_HWMON_PWM_CONFIG,	/* PWM3 */
+			   NCT6694_HWMON_PWM_CONFIG,	/* PWM4 */
+			   NCT6694_HWMON_PWM_CONFIG,	/* PWM5 */
+			   NCT6694_HWMON_PWM_CONFIG,	/* PWM6 */
+			   NCT6694_HWMON_PWM_CONFIG,	/* PWM7 */
+			   NCT6694_HWMON_PWM_CONFIG,	/* PWM8 */
+			   NCT6694_HWMON_PWM_CONFIG),	/* PWM9 */
 	NULL
 };
 
-static int nct6694_fan_read(struct device *dev, u32 attr, int channel, long *val)
+static int nct6694_fan_read(struct device *dev, u32 attr, int channel,
+			    long *val)
 {
 	struct nct6694_hwmon_data *data = dev_get_drvdata(dev);
 	unsigned char buf[2];
@@ -82,49 +84,51 @@ static int nct6694_fan_read(struct device *dev, u32 attr, int channel, long *val
 
 	switch (attr) {
 	case hwmon_fan_enable:
-		ret = nct6694_getusb(data->nct6694, REQUEST_HWMON_MOD,
-				     REQUEST_HWMON_CMD0_OFFSET,
-				     REQUEST_HWMON_CMD0_LEN,
-				     HWMON_FIN_EN(channel / 8), 1, buf);
-		if (ret) {
-			pr_err("%s: Failed to get hwmon device! :%d", __func__, ret);
+		ret = nct6694_read_msg(data->nct6694, REQUEST_HWMON_MOD,
+				       REQUEST_HWMON_CMD0_OFFSET,
+				       REQUEST_HWMON_CMD0_LEN,
+				       HWMON_FIN_EN(channel / 8),
+				       1, buf);
+		if (ret)
 			return -EINVAL;
-		}
+
 		*val = buf[0] & BIT(channel % 8) ? 1 : 0;
+
 		break;
 
 	case hwmon_fan_input:
-		ret = nct6694_getusb(data->nct6694, REQUEST_RPT_MOD,
-				     HWMON_FIN_IDX(channel), 2, 0, 2, buf);
-		if (ret) {
-			pr_err("%s: Failed to get hwmon device!", __func__);
+		ret = nct6694_read_msg(data->nct6694, REQUEST_RPT_MOD,
+				       HWMON_FIN_IDX(channel), 2, 0,
+				       2, buf);
+		if (ret)
 			return -EINVAL;
-		}
+
 		*val = (buf[1] | (buf[0] << 8)) & 0xFFFF;
+
 		break;
 
 	case hwmon_fan_min:
-		ret = nct6694_getusb(data->nct6694, REQUEST_HWMON_MOD,
-				     REQUEST_HWMON_CMD2_OFFSET,
-				     REQUEST_HWMON_CMD2_LEN,
-				     HWMON_FIN_LIMIT_IDX(channel),
-				     2, buf);
-		if (ret) {
-			pr_err("%s: Failed to get hwmon device!", __func__);
+		ret = nct6694_read_msg(data->nct6694, REQUEST_HWMON_MOD,
+				       REQUEST_HWMON_CMD2_OFFSET,
+				       REQUEST_HWMON_CMD2_LEN,
+				       HWMON_FIN_LIMIT_IDX(channel),
+				       2, buf);
+		if (ret)
 			return -EINVAL;
-		}
+
 		*val = (buf[1] | (buf[0] << 8)) & 0xFFFF;
+
 		break;
 
 	case hwmon_fan_min_alarm:
-		ret = nct6694_getusb(data->nct6694, REQUEST_RPT_MOD,
-				     HWMON_FIN_STS(channel / 8),
-				     1, 0, 1, buf);
-		if (ret) {
-			pr_err("%s: Failed to get hwmon device!", __func__);
+		ret = nct6694_read_msg(data->nct6694, REQUEST_RPT_MOD,
+				       HWMON_FIN_STS(channel / 8),
+				       1, 0, 1, buf);
+		if (ret)
 			return -EINVAL;
-		}
+
 		*val = buf[0] & BIT(channel % 8);
+
 		break;
 
 	default:
@@ -134,7 +138,8 @@ static int nct6694_fan_read(struct device *dev, u32 attr, int channel, long *val
 	return 0;
 }
 
-static int nct6694_pwm_read(struct device *dev, u32 attr, int channel, long *val)
+static int nct6694_pwm_read(struct device *dev, u32 attr, int channel,
+			    long *val)
 {
 	struct nct6694_hwmon_data *data = dev_get_drvdata(dev);
 	unsigned char buf;
@@ -142,25 +147,24 @@ static int nct6694_pwm_read(struct device *dev, u32 attr, int channel, long *val
 
 	switch (attr) {
 	case hwmon_pwm_input:
-		ret = nct6694_getusb(data->nct6694, REQUEST_RPT_MOD,
-				     HWMON_PWM_IDX(channel),
-				     1, 0, 1, &buf);
-		if (ret) {
-			pr_err("%s: Failed to get hwmon device!", __func__);
+		ret = nct6694_read_msg(data->nct6694, REQUEST_RPT_MOD,
+				       HWMON_PWM_IDX(channel),
+				       1, 0, 1, &buf);
+		if (ret)
 			return -EINVAL;
-		}
+
 		*val = buf;
+
 		break;
 	case hwmon_pwm_freq:
-		ret = nct6694_getusb(data->nct6694, REQUEST_HWMON_MOD,
-				     REQUEST_HWMON_CMD0_OFFSET,
-				     REQUEST_HWMON_CMD0_LEN,
-				     HWMON_PWM_FREQ_IDX(channel),
-				     1, &buf);
-		if (ret) {
-			pr_err("%s: Failed to get hwmon device! :%d", __func__, ret);
+		ret = nct6694_read_msg(data->nct6694, REQUEST_HWMON_MOD,
+				       REQUEST_HWMON_CMD0_OFFSET,
+				       REQUEST_HWMON_CMD0_LEN,
+				       HWMON_PWM_FREQ_IDX(channel),
+				       1, &buf);
+		if (ret)
 			return -EINVAL;
-		}
+
 		*val = buf * 25000 / 255;
 
 		break;
@@ -172,8 +176,8 @@ static int nct6694_pwm_read(struct device *dev, u32 attr, int channel, long *val
 	return 0;
 }
 
-
-static int nct6694_fan_write(struct device *dev, u32 attr, int channel, long val)
+static int nct6694_fan_write(struct device *dev, u32 attr, int channel,
+			     long val)
 {
 	struct nct6694_hwmon_data *data = dev_get_drvdata(dev);
 	unsigned char enable_buf[REQUEST_HWMON_CMD0_LEN] = {0};
@@ -184,49 +188,44 @@ static int nct6694_fan_write(struct device *dev, u32 attr, int channel, long val
 	switch (attr) {
 	case hwmon_fan_enable:
 		mutex_lock(&data->hwmon_lock);
-		ret = nct6694_getusb(data->nct6694, REQUEST_HWMON_MOD,
-				     REQUEST_HWMON_CMD0_OFFSET,
-				     REQUEST_HWMON_CMD0_LEN, 0,
-				     REQUEST_HWMON_CMD0_LEN,
-				     enable_buf);
-		if (ret) {
-			pr_err("%s: Failed to get hwmon device!\n", __func__);
+		ret = nct6694_read_msg(data->nct6694, REQUEST_HWMON_MOD,
+				       REQUEST_HWMON_CMD0_OFFSET,
+				       REQUEST_HWMON_CMD0_LEN, 0,
+				       REQUEST_HWMON_CMD0_LEN,
+				       enable_buf);
+		if (ret)
 			goto err;
-		}
+
 		if (val)
 			enable_buf[HWMON_FIN_EN(channel / 8)] |= BIT(channel % 8);
 		else
 			enable_buf[HWMON_FIN_EN(channel / 8)] &= ~BIT(channel % 8);
 
-		ret = nct6694_setusb_wdata(data->nct6694, REQUEST_HWMON_MOD,
-					   REQUEST_HWMON_CMD0_OFFSET,
-					   REQUEST_HWMON_CMD0_LEN,
-					   enable_buf);
-		if (ret) {
-			pr_err("%s: Failed to set hwmon device!\n", __func__);
+		ret = nct6694_write_msg(data->nct6694, REQUEST_HWMON_MOD,
+					REQUEST_HWMON_CMD0_OFFSET,
+					REQUEST_HWMON_CMD0_LEN, enable_buf);
+		if (ret)
 			goto err;
-		}
+
 		break;
 
 	case hwmon_fan_min:
 		mutex_lock(&data->hwmon_lock);
-		ret = nct6694_getusb(data->nct6694, REQUEST_HWMON_MOD,
-				     REQUEST_HWMON_CMD2_OFFSET,
-				     REQUEST_HWMON_CMD2_LEN, 0,
-				     REQUEST_HWMON_CMD2_LEN, buf);
-		if (ret) {
-			pr_err("%s: Failed to get hwmon device!", __func__);
+		ret = nct6694_read_msg(data->nct6694, REQUEST_HWMON_MOD,
+				       REQUEST_HWMON_CMD2_OFFSET,
+				       REQUEST_HWMON_CMD2_LEN, 0,
+				       REQUEST_HWMON_CMD2_LEN, buf);
+		if (ret)
 			goto err;
-		}
+
 		buf[HWMON_FIN_LIMIT_IDX(channel)] = (u8)((fan_val >> 8) & 0xFF);
 		buf[HWMON_FIN_LIMIT_IDX(channel) + 1] = (u8)(fan_val & 0xFF);
-		ret = nct6694_setusb_wdata(data->nct6694, REQUEST_HWMON_MOD,
-					   REQUEST_HWMON_CMD2_OFFSET,
-					   REQUEST_HWMON_CMD2_LEN, buf);
-		if (ret) {
-			pr_err("%s: Failed to set hwmon device!", __func__);
+		ret = nct6694_write_msg(data->nct6694, REQUEST_HWMON_MOD,
+					REQUEST_HWMON_CMD2_OFFSET,
+					REQUEST_HWMON_CMD2_LEN, buf);
+		if (ret)
 			goto err;
-		}
+
 		break;
 
 	default:
@@ -321,24 +320,20 @@ static int nct6694_hwmon_init(struct nct6694_hwmon_data *data)
 
 	/* Set Fan input Real Time alarm mode */
 	mutex_lock(&data->hwmon_lock);
-	ret = nct6694_getusb(data->nct6694, REQUEST_HWMON_MOD,
-			     REQUEST_HWMON_CMD2_OFFSET,
-			     REQUEST_HWMON_CMD2_LEN, 0,
-			     REQUEST_HWMON_CMD2_LEN, buf);
-	if (ret) {
-		pr_err("%s: Failed to get HWMON registers!", __func__);
+	ret = nct6694_read_msg(data->nct6694, REQUEST_HWMON_MOD,
+			       REQUEST_HWMON_CMD2_OFFSET,
+			       REQUEST_HWMON_CMD2_LEN, 0,
+			       REQUEST_HWMON_CMD2_LEN, buf);
+	if (ret)
 		goto err;
-	}
 
 	buf[HWMON_SMI_CTRL_IDX] = 0x02;
 
-	ret = nct6694_setusb_wdata(data->nct6694, REQUEST_HWMON_MOD,
-				   REQUEST_HWMON_CMD2_OFFSET,
-				   REQUEST_HWMON_CMD2_LEN, buf);
-	if (ret) {
-		pr_err("%s: Failed to set hwmon device!", __func__);
+	ret = nct6694_write_msg(data->nct6694, REQUEST_HWMON_MOD,
+				REQUEST_HWMON_CMD2_OFFSET,
+				REQUEST_HWMON_CMD2_LEN, buf);
+	if (ret)
 		goto err;
-	}
 
 err:
 	mutex_unlock(&data->hwmon_lock);
@@ -366,16 +361,14 @@ static int nct6694_hwmon_probe(struct platform_device *pdev)
 
 	/* Register hwmon device to HWMON framework */
 	hwmon_dev = devm_hwmon_device_register_with_info(&pdev->dev,
-							 "nct6694",
-							 data,
+							 "nct6694", data,
 							 &nct6694_chip_info,
 							 NULL);
 	if (IS_ERR(hwmon_dev)) {
-		dev_err(&pdev->dev, "Failed to register hwmon device!");
+		dev_err(&pdev->dev, "%s: Failed to register hwmon device!\n",
+			__func__);
 		return PTR_ERR(hwmon_dev);
 	}
-
-	dev_info(&pdev->dev, "Probe device: %s", pdev->name);
 
 	return 0;
 }
@@ -399,7 +392,6 @@ static int __init nct6694_init(void)
 
 	err = platform_driver_register(&nct6694_hwmon_driver);
 	if (!err) {
-		pr_info(DRVNAME ": platform_driver_register\n");
 		if (err)
 			platform_driver_unregister(&nct6694_hwmon_driver);
 	}
@@ -417,4 +409,3 @@ module_exit(nct6694_exit);
 MODULE_DESCRIPTION("USB-hwmon driver for NCT6694");
 MODULE_AUTHOR("Tzu-Ming Yu <tmyu0@nuvoton.com>");
 MODULE_LICENSE("GPL");
-
