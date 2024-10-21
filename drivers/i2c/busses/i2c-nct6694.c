@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0+
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Nuvoton NCT6694 I2C adapter driver based on USB interface.
  *
@@ -9,9 +9,8 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
+#include <linux/mfd/core.h>
 #include <linux/mfd/nct6694.h>
-
-#define DEFAULT_BR		2
 
 /* Host interface */
 #define REQUEST_I2C_MOD		0x03
@@ -31,108 +30,52 @@
 
 #define DRVNAME "nct6694-i2c"
 
-#define SET_SPEED_FROM_PARAM(port, param) {	\
-	if (param >= 0 && param <= 6)	\
-		nct6694_i2c_adapter[port].priv.br = param;	\
-	else	\
-		nct6694_i2c_adapter[port].priv.br = DEFAULT_BR;  /* Default: 100K */ \
-}
-
-static int sp0 = 2;
-module_param(sp0, int, 0444);
-MODULE_PARM_DESC(sp0, "The I2C clock speed of port 0. Default:2(100K). The value can range\n"
-		      "from 0 to 6, corresponding to 25K/50K/100K/200K/400K/800K/1M\n"
-		      "respectively.\n");
-static int sp1 = 2;
-module_param(sp1, int, 0444);
-MODULE_PARM_DESC(sp1, "The I2C clock speed of port 1. Default:2(100K). The value can range\n"
-		      "from 0 to 6, corresponding to 25K/50K/100K/200K/400K/800K/1M\n"
-		      "respectively.");
-static int sp2 = 2;
-module_param(sp2, int, 0444);
-MODULE_PARM_DESC(sp2, "The I2C clock speed of port 2. Default:2(100K). The value can range\n"
-		      "from 0 to 6, corresponding to 25K/50K/100K/200K/400K/800K/1M\n"
-		      "respectively.");
-static int sp3 = 2;
-module_param(sp3, int, 0444);
-MODULE_PARM_DESC(sp3, "The I2C clock speed of port 3. Default:2(100K). The value can range\n"
-		      "from 0 to 6, corresponding to 25K/50K/100K/200K/400K/800K/1M\n"
-		      "respectively.");
-static int sp4 = 2;
-module_param(sp4, int, 0444);
-MODULE_PARM_DESC(sp4, "The I2C clock speed of port 4. Default:2(100K). The value can range\n"
-		      "from 0 to 6, corresponding to 25K/50K/100K/200K/400K/800K/1M\n"
-		      "respectively.");
-static int sp5 = 2;
-module_param(sp5, int, 0444);
-MODULE_PARM_DESC(sp5, "The I2C clock speed of port 5. Default:2(100K). The value can range\n"
-		      "from 0 to 6, corresponding to 25K/50K/100K/200K/400K/800K/1M\n"
-		      "respectively.");
+enum i2c_baudrate {
+	I2C_BR_25K = 0,
+	I2C_BR_50K,
+	I2C_BR_100K,
+	I2C_BR_200K,
+	I2C_BR_400K,
+	I2C_BR_800K,
+	I2C_BR_1M
+};
 
 struct nct6694_i2c_data {
 	struct nct6694 *nct6694;
-	struct nct6694_i2c_adapter *adaps;
-	int nr_adapter;
-};
-
-struct nct6694_i2c_priv {
+	struct i2c_adapter adapter;
 	unsigned char port;
 	unsigned char br;
 };
 
-struct nct6694_i2c_adapter {
-	struct i2c_adapter adapter;
-	struct nct6694_i2c_data *data;
-
-	struct nct6694_i2c_priv priv;
-};
-
-static void fill_in_buffer(u8 port, u8 br, u8 addr, u8 w_cnt, u8 r_cnt,
-			   unsigned char *to, unsigned char *from)
+static int nct6694_xfer(struct i2c_adapter *adap, struct i2c_msg *msgs, int num)
 {
-	int i;
-
-	to[I2C_PORT_IDX] = port;
-	to[I2C_BR_IDX] = br;
-	to[I2C_ADDR_IDX] = addr;
-	to[I2C_W_CNT_IDX] = w_cnt;
-	to[I2C_R_CNT_IDX] = r_cnt;
-
-	for (i = 0; i < w_cnt; i++)
-		to[i + I2C_WR_IDX] = from[i];
-}
-
-static int nct6694_xfer(struct i2c_adapter *adapter, struct i2c_msg *msgs,
-			int num)
-{
-	struct nct6694_i2c_adapter *adap = adapter->algo_data;
-	struct nct6694_i2c_data *data = adap->data;
-	unsigned char buf[REQUEST_I2C_LEN] = {0};
+	struct nct6694_i2c_data *data = adap->algo_data;
 	int ret, i;
 
 	for (i = 0; i < num ; i++) {
+		unsigned char buf[REQUEST_I2C_LEN] = {0};
 		struct i2c_msg *msg_temp = &msgs[i];
 
 		if (msg_temp->len > 64)
 			return -EPROTO;
 
+		buf[I2C_PORT_IDX] = data->port;
+		buf[I2C_BR_IDX] = data->br;
+		buf[I2C_ADDR_IDX] = i2c_8bit_addr_from_msg(msg_temp);
 		if (msg_temp->flags & I2C_M_RD) {
-			fill_in_buffer(adap->priv.port, adap->priv.br,
-				       i2c_8bit_addr_from_msg(msg_temp), 0,
-				       msg_temp->len, buf, msg_temp->buf);
-			ret = nct6694_setusb_rdata(data->nct6694, REQUEST_I2C_MOD,
-						   REQUEST_I2C_OFFSET, REQUEST_I2C_LEN,
-						   I2C_RD_IDX, msg_temp->len, buf);
-			memcpy(msg_temp->buf, buf, msg_temp->len);
+			buf[I2C_R_CNT_IDX] = msg_temp->len;
+			ret = nct6694_write_msg(data->nct6694, REQUEST_I2C_MOD,
+						REQUEST_I2C_OFFSET, REQUEST_I2C_LEN,
+						buf);
 			if (ret < 0)
 				return 0;
+			memcpy(msg_temp->buf, buf + I2C_RD_IDX, msg_temp->len);
 		} else {
-			fill_in_buffer(adap->priv.port, adap->priv.br,
-				       i2c_8bit_addr_from_msg(msg_temp),
-				       msg_temp->len, 0, buf, msg_temp->buf);
-			ret = nct6694_setusb_wdata(data->nct6694, REQUEST_I2C_MOD,
-						   REQUEST_I2C_OFFSET, REQUEST_I2C_LEN,
-						   buf);
+			buf[I2C_W_CNT_IDX] = msg_temp->len;
+			memcpy(buf + I2C_WR_IDX, msg_temp->buf, msg_temp->len);
+			ret = nct6694_write_msg(data->nct6694, REQUEST_I2C_MOD,
+						REQUEST_I2C_OFFSET, REQUEST_I2C_LEN,
+						buf);
 			if (ret < 0)
 				return 0;
 		}
@@ -151,76 +94,43 @@ static const struct i2c_algorithm algorithm = {
 	.functionality = nct6694_func,
 };
 
-#define NCT6694_I2C_ADAPTER(_port)	\
-{	\
-	.adapter = {	\
-		.owner = THIS_MODULE,	\
-		.algo  = &algorithm,	\
-	},	\
-	.priv = {	\
-		.port = _port	\
-	}	\
-}
-
-static struct nct6694_i2c_adapter nct6694_i2c_adapter[] = {
-	NCT6694_I2C_ADAPTER(0),
-	NCT6694_I2C_ADAPTER(1),
-	NCT6694_I2C_ADAPTER(2),
-	NCT6694_I2C_ADAPTER(3),
-	NCT6694_I2C_ADAPTER(4),
-	NCT6694_I2C_ADAPTER(5),
-};
-
 static int nct6694_i2c_probe(struct platform_device *pdev)
 {
-	struct nct6694_i2c_data *data;
+	const struct mfd_cell *cell = mfd_get_cell(pdev);
 	struct nct6694 *nct6694 = dev_get_drvdata(pdev->dev.parent);
-	int i;
+	struct nct6694_i2c_data *data;
+	int ret;
 
-	data = kzalloc(sizeof(*data), GFP_KERNEL);
+	data = devm_kzalloc(&pdev->dev, sizeof(*data), GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
 
 	data->nct6694 = nct6694;
-	data->adaps = nct6694_i2c_adapter;
-	data->nr_adapter = ARRAY_SIZE(nct6694_i2c_adapter);
+	data->port = cell->id;
+	data->br = I2C_BR_100K;
 
-	//Init speed info by param or default value.
-	SET_SPEED_FROM_PARAM(0, sp0);
-	SET_SPEED_FROM_PARAM(1, sp1);
-	SET_SPEED_FROM_PARAM(2, sp2);
-	SET_SPEED_FROM_PARAM(3, sp3);
-	SET_SPEED_FROM_PARAM(4, sp4);
-	SET_SPEED_FROM_PARAM(5, sp5);
+	sprintf(data->adapter.name, "NCT6694 I2C Adapter %d", cell->id);
+	data->adapter.owner = THIS_MODULE;
+	data->adapter.algo = &algorithm;
+	data->adapter.dev.parent = &pdev->dev;
+	data->adapter.algo_data = data;
 
 	platform_set_drvdata(pdev, data);
 
-	/* Register each i2c adapter to I2C framework */
-	for (i = 0; i < data->nr_adapter; i++) {
-		struct nct6694_i2c_adapter *adapter = &data->adaps[i];
-
-		adapter->priv.port = i;
-		adapter->data = data;
-		adapter->adapter.algo_data = adapter;
-		sprintf(adapter->adapter.name, "NCT6694 I2C Adapter %d", i);
-
-		i2c_add_adapter(&data->adaps[i].adapter);
+	ret = i2c_add_adapter(&data->adapter);
+	if (ret) {
+		dev_err(&pdev->dev, "%s: Failed to register I2C Adapter: %pe\n",
+			__func__, ERR_PTR(ret));
 	}
 
-	dev_info(&pdev->dev, "Probe device :%s", pdev->name);
-
-	return 0;
+	return ret;
 }
 
 static int nct6694_i2c_remove(struct platform_device *pdev)
 {
 	struct nct6694_i2c_data *data = platform_get_drvdata(pdev);
-	int i;
 
-	for (i = 0; i < data->nr_adapter; i++)
-		i2c_del_adapter(&data->adaps[i].adapter);
-
-	kfree(data);
+	i2c_del_adapter(&data->adapter);
 
 	return 0;
 }
@@ -239,7 +149,6 @@ static int __init nct6694_init(void)
 
 	err = platform_driver_register(&nct6694_i2c_driver);
 	if (!err) {
-		pr_info(DRVNAME ": platform_driver_register\n");
 		if (err)
 			platform_driver_unregister(&nct6694_i2c_driver);
 	}
@@ -257,4 +166,3 @@ module_exit(nct6694_exit);
 MODULE_DESCRIPTION("USB-i2c adapter driver for NCT6694");
 MODULE_AUTHOR("Tzu-Ming Yu <tmyu0@nuvoton.com>");
 MODULE_LICENSE("GPL");
-
