@@ -75,7 +75,9 @@ static int iio_hwmon_probe(struct platform_device *pdev)
 	struct device *hwmon_dev;
 	char *sname;
 
+	dev_info(dev, "%s: init_name = %s, dev_name = %s", __func__, dev->init_name, pdev->name);
 	channels = devm_iio_channel_get_all(dev);
+	dev_info(dev, "%s: iio_channels = %d\n", __func__, channels);
 	if (IS_ERR(channels)) {
 		if (PTR_ERR(channels) == -ENODEV)
 			return -EPROBE_DEFER;
@@ -91,7 +93,7 @@ static int iio_hwmon_probe(struct platform_device *pdev)
 	/* count how many attributes we have */
 	while (st->channels[st->num_channels].indio_dev)
 		st->num_channels++;
-
+	dev_info(dev, "%s: st->num_channels = %d\n", __func__, st->num_channels);
 	st->attrs = devm_kcalloc(dev,
 				 st->num_channels + 1, sizeof(*st->attrs),
 				 GFP_KERNEL);
@@ -162,6 +164,9 @@ static int iio_hwmon_probe(struct platform_device *pdev)
 
 	hwmon_dev = devm_hwmon_device_register_with_groups(dev, sname, st,
 							   st->groups);
+	if (hwmon_dev)
+		dev_info(dev, "%s: Probed\n", __func__);
+	dev_info(dev, "%s: Null\n", __func__);
 	return PTR_ERR_OR_ZERO(hwmon_dev);
 }
 

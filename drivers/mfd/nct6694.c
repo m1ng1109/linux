@@ -62,6 +62,7 @@ static const struct mfd_cell nct6694_dev[] = {
 	MFD_DEV_SIMPLE(HWMON),
 	MFD_DEV_SIMPLE(PWM),
 	MFD_DEV_SIMPLE(RTC),
+	{ .name = "iio_hwmon" }
 };
 
 int nct6694_register_handler(struct nct6694 *nct6694, int bit_position,

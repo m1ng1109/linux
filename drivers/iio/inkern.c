@@ -471,11 +471,14 @@ struct iio_channel *iio_channel_get_all(struct device *dev)
 	mutex_lock(&iio_map_list_lock);
 	/* first count the matching maps */
 	list_for_each_entry(c, &iio_map_list, l)
-		if (name && strcmp(name, c->map->consumer_dev_name) != 0)
+		if (name && strcmp(name, c->map->consumer_dev_name) != 0) {
+			dev_info(dev, "name = %s, consumer_dev_name = %s", name, c->map->consumer_dev_name);
 			continue;
+		}
 		else
 			nummaps++;
 
+	dev_info(dev, "nummaps = %d\n", nummaps);
 	if (nummaps == 0) {
 		ret = -ENODEV;
 		goto error_ret;
@@ -504,6 +507,7 @@ struct iio_channel *iio_channel_get_all(struct device *dev)
 		iio_device_get(chans[mapind].indio_dev);
 		mapind++;
 	}
+	dev_info(dev, "mapind = %d\n", mapind);
 	if (mapind == 0) {
 		ret = -ENODEV;
 		goto error_free_chans;

@@ -9,6 +9,8 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/iio/iio.h>
+#include <linux/iio/driver.h>
+#include <linux/iio/machine.h>
 #include <linux/platform_device.h>
 #include <linux/mfd/nct6694.h>
 
@@ -42,6 +44,7 @@
 
 struct nct6694_iio_data {
 	struct nct6694 *nct6694;
+	struct iio_dev *indio_dev;
 	struct mutex iio_lock;
 };
 
@@ -67,6 +70,14 @@ static const struct iio_event_spec nct6694_temp_events[] = {
 		.mask_separate = BIT(IIO_EV_INFO_VALUE) |
 				 BIT(IIO_EV_INFO_ENABLE),
 	}
+};
+
+static struct iio_map nct6694_iio_hwmon_maps[] = {
+	{
+		.adc_channel_label = "temp_adc",
+		.consumer_dev_name = "iio_hwmon.0",
+	},
+	{ }
 };
 
 #define NCT6694_VOLTAGE_CHANNEL(num, addr) {			\
@@ -120,6 +131,12 @@ static const struct iio_chan_spec nct6694_iio_channels[] = {
 	NCT6694_TEMPERATURE_CHANNEL(7, 0x1E),	/* TDP2 */
 	NCT6694_TEMPERATURE_CHANNEL(8, 0x20),	/* TDP3 */
 	NCT6694_TEMPERATURE_CHANNEL(9, 0x22),	/* TDP4 */
+
+	{
+		.type = IIO_TEMP,
+		.info_mask_separate = BIT(IIO_CHAN_INFO_PROCESSED),
+		.datasheet_name = "temp_adc",
+	},
 
 	NCT6694_TEMPERATURE_CHANNEL(10, 0x30),	/* DTIN0 */
 	NCT6694_TEMPERATURE_CHANNEL(11, 0x32),	/* DTIN1 */
@@ -557,6 +574,7 @@ static int nct6694_iio_probe(struct platform_device *pdev)
 
 	data = iio_priv(indio_dev);
 	data->nct6694 = nct6694;
+	data->indio_dev = indio_dev;
 	mutex_init(&data->iio_lock);
 	platform_set_drvdata(pdev, data);
 
@@ -570,6 +588,12 @@ static int nct6694_iio_probe(struct platform_device *pdev)
 	indio_dev->info = &nct6694_iio_info;
 	indio_dev->modes = INDIO_DIRECT_MODE;
 
+	ret = iio_map_array_register(indio_dev, nct6694_iio_hwmon_maps);
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to register iio map!\n");
+		return ret;
+	}
+
 	/* Register iio device to IIO framework */
 	ret = devm_iio_device_register(&pdev->dev, indio_dev);
 	if (ret) {
@@ -582,6 +606,9 @@ static int nct6694_iio_probe(struct platform_device *pdev)
 
 static int nct6694_iio_remove(struct platform_device *pdev)
 {
+	struct nct6694_iio_data *data = platform_get_drvdata(pdev);
+
+	iio_map_array_unregister(data->indio_dev);
 	return 0;
 }
 
